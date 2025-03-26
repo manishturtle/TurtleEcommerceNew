@@ -3,6 +3,7 @@ from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from products.models import Product
 
 class LocationType(models.TextChoices):
     WAREHOUSE = 'WAREHOUSE', 'Warehouse'
@@ -59,40 +60,6 @@ class FulfillmentLocation(models.Model):
 
     def __str__(self):
         return self.name
-
-class Product(models.Model):
-    sku = models.CharField(max_length=50, unique=True)
-    name = models.CharField(max_length=255)
-    description = models.TextField(blank=True, null=True)
-    is_serialized = models.BooleanField(
-        default=False,
-        help_text="If True, each unit of this product must have a unique serial number"
-    )
-    is_lotted = models.BooleanField(
-        default=False,
-        help_text="If True, inventory is tracked by lot/batch numbers"
-    )
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        verbose_name = "Product"
-        verbose_name_plural = "Products"
-        ordering = ['name']
-
-    def clean(self):
-        if self.is_serialized and self.is_lotted:
-            raise ValidationError(
-                "A product cannot be both serialized and lotted at the same time"
-            )
-
-    def save(self, *args, **kwargs):
-        self.clean()
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        return f"{self.name} ({self.sku})"
 
 class AdjustmentReason(models.Model):
     name = models.CharField(

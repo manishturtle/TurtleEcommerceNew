@@ -27,9 +27,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-here')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'False') == 'True'
+DEBUG = True
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'testserver']
 
 # Schema Configuration
 SCHEMA_APPS = {
@@ -48,11 +48,22 @@ PUBLIC_SCHEMA_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'django_filters',  
     'users',
 ]
 
 # Update INSTALLED_APPS
-INSTALLED_APPS = PUBLIC_SCHEMA_APPS + [
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    'rest_framework',
+    'rest_framework.authtoken',  # Make sure this is here
+    'django_filters',
+    'users',
     'tenants',
     'core',
     'inventory',
@@ -63,16 +74,27 @@ INSTALLED_APPS = PUBLIC_SCHEMA_APPS + [
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('DB_NAME'),
-        'USER': os.getenv('DB_USER'),
-        'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': os.getenv('DB_HOST'),
-        'PORT': os.getenv('DB_PORT'),
-        'OPTIONS': {
-            'options': '-c search_path=public,tenants,inventory,products,core'
-        }
+        'NAME': os.getenv('DB_NAME', 'erp_database'),
+        'USER': os.getenv('DB_USER', 'postgres'),
+        'PASSWORD': os.getenv('DB_PASSWORD', 'Qu1ckAss1st@123'),
+        'HOST': os.getenv('DB_HOST', 'localhost'),
+        'PORT': os.getenv('DB_PORT', '5432'),
     }
 }
+
+# Comment out database routing for now
+# DATABASE_APPS_MAPPING = {
+#     'products': 'products',
+#     'inventory': 'inventory',
+#     'auth': 'default',
+#     'admin': 'default',
+#     'sessions': 'default',
+#     'contenttypes': 'default',
+#     'users': 'default',
+#     'tenants': 'default',
+# }
+
+# DATABASE_ROUTERS = ['erp_backend.db_routers.SchemaRouter']
 
 # Django settings
 MIDDLEWARE = [
@@ -143,25 +165,16 @@ STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-# Rest Framework settings
+# Django REST Framework settings
 REST_FRAMEWORK = {
-    'DEFAULT_RENDERER_CLASSES': [
-        'rest_framework.renderers.JSONRenderer',
-        'rest_framework.renderers.BrowsableAPIRenderer',
-    ],
-    'DEFAULT_PARSER_CLASSES': [
-        'rest_framework.parsers.JSONParser',
-    ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
-        'rest_framework.authentication.BasicAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
     ],
 }
-
-# Database routers
-DATABASE_ROUTERS = [
-    'erp_backend.db_routers.SchemaRouter',
-]
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
