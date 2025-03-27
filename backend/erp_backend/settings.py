@@ -31,6 +31,19 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'testserver']
 
+# CORS Configuration
+CORS_ALLOW_ALL_ORIGINS = True  # For development only
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "http://127.0.0.1:3002",
+    "http://127.0.0.1:56646",  # Browser preview proxy
+]
+
 # Schema Configuration
 SCHEMA_APPS = {
     'inventory': ['inventory'],
@@ -69,6 +82,7 @@ INSTALLED_APPS = [
     'core',
     'inventory',
     'products',
+    'corsheaders',  # Add corsheaders to INSTALLED_APPS
 ]
 
 # Database configuration
@@ -100,6 +114,7 @@ DATABASES = {
 # Django settings
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',  # Add CorsMiddleware to MIDDLEWARE
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'tenants.middleware.TenantMiddleware',  # Add tenant middleware after CommonMiddleware

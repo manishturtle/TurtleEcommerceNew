@@ -89,7 +89,6 @@ class AdjustmentReasonSerializer(serializers.ModelSerializer):
         model = AdjustmentReason
         fields = [
             'id', 'name', 'description', 'is_active', 
-            'requires_note', 'requires_approval',
             'created_at', 'updated_at'
         ]
         read_only_fields = ('created_at', 'updated_at')
@@ -104,12 +103,6 @@ class AdjustmentReasonSerializer(serializers.ModelSerializer):
             'description': {
                 'help_text': 'Detailed explanation of when to use this adjustment reason',
                 'required': False
-            },
-            'requires_note': {
-                'help_text': 'Whether a note is required when using this reason'
-            },
-            'requires_approval': {
-                'help_text': 'Whether adjustments with this reason require manager approval'
             }
         }
 
@@ -117,34 +110,33 @@ class AdjustmentReasonSerializer(serializers.ModelSerializer):
         """
         Validate that the name is not too generic and follows naming conventions.
         """
-        # Convert to title case for consistency
-        value = value.strip().title()
-        
-        # Check minimum length
         if len(value) < 3:
             raise serializers.ValidationError(
-                "Name must be at least 3 characters long."
+                "Adjustment reason name must be at least 3 characters long."
             )
-            
-        # Check for overly generic names
-        generic_names = ['adjustment', 'change', 'update', 'modify', 'other']
+        
+        generic_names = ['test', 'adjustment', 'reason', 'other']
         if value.lower() in generic_names:
             raise serializers.ValidationError(
-                "Please provide a more specific name for the adjustment reason."
+                f"'{value}' is too generic. Please provide a more descriptive name."
             )
             
         return value
-
+    
     def validate(self, data):
         """
         Additional validation rules for the adjustment reason.
         """
-        # If requires_approval is True, description should be provided
-        if data.get('requires_approval') and not data.get('description'):
-            raise serializers.ValidationError({
-                'description': 'Description is required when approval is required.'
-            })
+        # Example validation: Require description for certain types of reasons
+        if 'name' in data and 'description' in data:
+            name = data['name'].lower()
+            description = data.get('description', '')
             
+            if ('damage' in name or 'loss' in name) and (not description or len(description) < 10):
+                raise serializers.ValidationError({
+                    'description': 'Detailed description is required for damage or loss reasons.'
+                })
+                
         return data
 
 class InventorySerializer(serializers.ModelSerializer):
@@ -379,11 +371,6 @@ class SimpleUserSerializer(serializers.Serializer):
     email = serializers.EmailField()
     first_name = serializers.CharField()
     last_name = serializers.CharField()
-
-class AdjustmentReasonSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = AdjustmentReason
-        fields = ['id', 'name', 'description', 'is_active']
 
 class InventoryAdjustmentCreateSerializer(serializers.ModelSerializer):
     inventory = serializers.PrimaryKeyRelatedField(queryset=Inventory.objects.all())

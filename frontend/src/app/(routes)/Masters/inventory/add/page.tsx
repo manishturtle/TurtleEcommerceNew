@@ -24,7 +24,9 @@ import {
   Stack,
   Card,
   CardContent,
-  Breadcrumbs
+  Breadcrumbs,
+  CircularProgress,
+  Alert
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
@@ -46,6 +48,9 @@ import SummarizeIcon from '@mui/icons-material/Summarize';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import Inventory2Icon from '@mui/icons-material/Inventory2';
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
+import { useAdjustmentReasons } from '@/app/hooks/useAdjustmentReasons';
+import { useAdjustmentTypes } from '@/app/hooks/useAdjustmentTypes';
+import { fetchCurrentStock, createInventoryAdjustment } from '@/app/services/api';
 
 // Define Zod schema for inventory adjustment validation
 const inventoryAdjustmentSchema = z.object({
@@ -64,23 +69,6 @@ type InventoryAdjustmentFormData = z.infer<typeof inventoryAdjustmentSchema>;
 
 export default function AddInventoryPage() {
   const router = useRouter();
-  const [expiryDateStr, setExpiryDateStr] = useState<string>('');
-  const [adjustmentQuantity, setAdjustmentQuantity] = useState<number>(50);
-  
-  // Mock current stock data
-  const currentStock = {
-    stockQuantity: 1250,
-    reserved: 50,
-    nonSaleable: 10,
-    onOrder: 200,
-    inTransit: 75,
-    returned: 5,
-    onHold: 25,
-    backorder: 100
-  };
-  
-  // Calculate new stock level based on current stock and adjustment quantity
-  const newStockLevel = currentStock.stockQuantity + adjustmentQuantity;
 
   // Initialize react-hook-form with zod resolver
   const {
@@ -88,49 +76,123 @@ export default function AddInventoryPage() {
     handleSubmit,
     watch,
     setValue,
-    formState: { errors, isSubmitting }
+    formState: { errors, isSubmitting: isFormSubmitting }
   } = useForm<InventoryAdjustmentFormData>({
     resolver: zodResolver(inventoryAdjustmentSchema),
     defaultValues: {
       product: '',
       location: '',
+      adjustmentType: '',
+      quantity: '',
+      reason: '',
       serialLotNumber: '',
       expiryDate: '',
-      adjustmentType: '',
-      reason: '',
-      quantity: '',
       notes: ''
     }
   });
 
-  // Watch quantity field to update adjustment quantity
-  const quantityValue = watch('quantity');
-  const adjustmentTypeValue = watch('adjustmentType');
+  // Use the adjustment reasons hook
+  const { reasons, isLoading: isLoadingReasons, error: reasonsError } = useAdjustmentReasons();
+  const { adjustmentTypes, isLoading: isLoadingTypes } = useAdjustmentTypes();
+  
+  // State for current stock
+  const [currentStock, setCurrentStock] = useState({
+    id: 0,
+    stockQuantity: 0,
+    reservedQuantity: 0,
+    availableQuantity: 0,
+    backorder: 0
+  });
+  
+  // State for loading and error handling
+  const [isLoadingStock, setIsLoadingStock] = useState(false);
+  const [stockError, setStockError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Update adjustment quantity when quantity or type changes
+  // Get form values for calculations
+  const adjustmentType = watch('adjustmentType');
+  const quantityStr = watch('quantity');
+  const productId = watch('product');
+  const locationId = watch('location');
+  
+  // Calculate adjustment quantity based on type and value
+  const quantity = parseFloat(quantityStr) || 0;
+  const adjustmentQuantity = 
+    adjustmentType === 'ADD' ? quantity :
+    adjustmentType === 'REMOVE' ? -quantity :
+    0;
+  
+  // Calculate new stock level based on current stock and adjustment quantity
+  const newStockLevel = currentStock.stockQuantity + adjustmentQuantity;
+
+  // Fetch current stock when product and location change
   useEffect(() => {
-    const qty = parseFloat(quantityValue) || 0;
-    if (adjustmentTypeValue === 'add') {
-      setAdjustmentQuantity(qty);
-    } else if (adjustmentTypeValue === 'remove') {
-      setAdjustmentQuantity(-qty);
-    } else {
-      setAdjustmentQuantity(50); // Default for demo
-    }
-  }, [quantityValue, adjustmentTypeValue]);
-
-  const handleFormSubmit = (data: InventoryAdjustmentFormData) => {
-    console.log('Adjustment data:', data);
-    // Here you would typically send this data to your backend API
-    // and then update the inventory items accordingly
+    const fetchStock = async () => {
+      if (!productId || !locationId) return;
+      
+      try {
+        setIsLoadingStock(true);
+        setStockError(null);
+        const stock = await fetchCurrentStock(parseInt(productId), parseInt(locationId));
+        
+        if (stock) {
+          setCurrentStock({
+            id: stock.id,
+            stockQuantity: stock.quantity,
+            reservedQuantity: stock.reserved_quantity,
+            availableQuantity: stock.available_quantity,
+            backorder: stock.backorder || 0
+          });
+        } else {
+          // No existing inventory found
+          setCurrentStock({
+            id: 0,
+            stockQuantity: 0,
+            reservedQuantity: 0,
+            availableQuantity: 0,
+            backorder: 0
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching stock:', error);
+        setStockError('Failed to fetch current stock levels');
+      } finally {
+        setIsLoadingStock(false);
+      }
+    };
     
-    // For now, let's just add a simple notification and redirect
-    alert(`Inventory adjusted: ${data.quantity} units of ${data.product}`);
-    router.push('/Masters/inventory');
-  };
+    fetchStock();
+  }, [productId, locationId]);
 
-  const handleCancel = () => {
-    router.push('/Masters/inventory');
+  // Form submission handler
+  const onSubmit = async (data: InventoryAdjustmentFormData) => {
+    try {
+      setIsSubmitting(true);
+      setSubmitError(null);
+      
+      // Prepare data for API
+      const adjustmentData = {
+        inventory: currentStock.id || 0,
+        adjustment_type: data.adjustmentType,
+        reason: parseInt(data.reason),
+        quantity: parseFloat(data.quantity),
+        lot_number: data.serialLotNumber || undefined,
+        expiry_date: data.expiryDate || undefined,
+        notes: data.notes || undefined
+      };
+      
+      // Submit to API
+      await createInventoryAdjustment(adjustmentData);
+      
+      // Redirect to inventory list on success
+      router.push('/Masters/inventory');
+    } catch (error) {
+      console.error('Error submitting adjustment:', error);
+      setSubmitError('Failed to submit inventory adjustment');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Section style
@@ -161,16 +223,20 @@ export default function AddInventoryPage() {
         </Typography>
         <Button 
           variant="contained" 
-          startIcon={<SaveIcon />}
-          onClick={handleSubmit(handleFormSubmit)}
-          color="primary"
-          sx={{ borderRadius: 1 }}
+          color="primary" 
+          onClick={handleSubmit(onSubmit)}
+          disabled={isSubmitting}
+          startIcon={isSubmitting ? <CircularProgress size={20} /> : undefined}
         >
-          Save Changes
+          {isSubmitting ? 'Saving...' : 'Save Adjustment'}
         </Button>
       </Box>
 
-      <form onSubmit={handleSubmit(handleFormSubmit)}>
+      {submitError && (
+        <Alert severity="error" sx={{ mb: 2 }}>{submitError}</Alert>
+      )}
+
+      <form onSubmit={handleSubmit(onSubmit)}>
         <Box sx={{ mt: 2 }}>
           {/* Basic Information Section */}
           <Box sx={sectionStyle}>
@@ -303,10 +369,9 @@ export default function AddInventoryPage() {
                       <TextField
                         id="expiry-date-input"
                         type="date"
-                        value={expiryDateStr}
+                        value={field.value}
                         onChange={(e) => {
                           const dateStr = e.target.value;
-                          setExpiryDateStr(dateStr);
                           field.onChange(dateStr);
                         }}
                         size="small"
@@ -359,10 +424,15 @@ export default function AddInventoryPage() {
                         }
                       >
                         <MenuItem value="">Select type</MenuItem>
-                        <MenuItem value="add">Add Inventory</MenuItem>
-                        <MenuItem value="remove">Remove Inventory</MenuItem>
-                        <MenuItem value="transfer">Transfer</MenuItem>
-                        <MenuItem value="count">Inventory Count</MenuItem>
+                        {isLoadingTypes ? (
+                          <MenuItem disabled>Loading...</MenuItem>
+                        ) : (
+                          adjustmentTypes.map((type) => (
+                            <MenuItem key={type.code} value={type.code}>
+                              {type.name}
+                            </MenuItem>
+                          ))
+                        )}
                       </Select>
                       {errors.adjustmentType && (
                         <FormHelperText error>{errors.adjustmentType.message}</FormHelperText>
@@ -377,14 +447,13 @@ export default function AddInventoryPage() {
                   control={control}
                   render={({ field }) => (
                     <FormControl error={!!errors.reason} fullWidth>
-                      <InputLabel shrink htmlFor="reason-label" sx={{ bgcolor: 'background.paper', px: 0.5 }}>
-                        Reason *
+                      <InputLabel shrink htmlFor="reason-input" sx={{ bgcolor: 'background.paper', px: 0.5 }}>
+                        Reason
                       </InputLabel>
                       <Select
                         {...field}
-                        labelId="reason-label"
-                        id="reason-select"
-                        error={!!errors.reason}
+                        id="reason-input"
+                        variant="outlined"
                         displayEmpty
                         size="small"
                         sx={{ mt: 1 }}
@@ -394,16 +463,31 @@ export default function AddInventoryPage() {
                           </InputAdornment>
                         }
                       >
-                        <MenuItem value="">Select reason</MenuItem>
-                        <MenuItem value="purchase">Purchase</MenuItem>
-                        <MenuItem value="sale">Sale</MenuItem>
-                        <MenuItem value="return">Return</MenuItem>
-                        <MenuItem value="damage">Damage</MenuItem>
-                        <MenuItem value="loss">Loss</MenuItem>
-                        <MenuItem value="adjustment">Adjustment</MenuItem>
+                        <MenuItem value="" disabled>
+                          <em>Select a reason</em>
+                        </MenuItem>
+                        {isLoadingReasons ? (
+                          <MenuItem disabled>
+                            <CircularProgress size={20} />
+                            <Box sx={{ ml: 1 }}>Loading reasons...</Box>
+                          </MenuItem>
+                        ) : reasonsError ? (
+                          <MenuItem disabled>
+                            <Box sx={{ color: 'error.main' }}>Error loading reasons</Box>
+                          </MenuItem>
+                        ) : (
+                          reasons.map((reason) => (
+                            <MenuItem key={reason.id} value={reason.id.toString()}>
+                              {reason.name}
+                            </MenuItem>
+                          ))
+                        )}
                       </Select>
                       {errors.reason && (
                         <FormHelperText error>{errors.reason.message}</FormHelperText>
+                      )}
+                      {reasonsError && !errors.reason && (
+                        <FormHelperText error>Failed to load reasons. Please try again.</FormHelperText>
                       )}
                     </FormControl>
                   )}
@@ -452,54 +536,45 @@ export default function AddInventoryPage() {
               </Typography>
             </Box>
             <Grid container spacing={2}>
-              <Grid item xs={6} sm={3}>
-                <Box sx={{ p: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
-                  <Typography variant="caption" color="text.secondary">Stock Quantity</Typography>
-                  <Typography variant="h6" color="primary.main" fontWeight="bold">1,250</Typography>
-                </Box>
-              </Grid>
-              <Grid item xs={6} sm={3}>
-                <Box sx={{ p: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
-                  <Typography variant="caption" color="text.secondary">Reserved</Typography>
-                  <Typography variant="h6" color="primary.main" fontWeight="bold">50</Typography>
-                </Box>
-              </Grid>
-              <Grid item xs={6} sm={3}>
-                <Box sx={{ p: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
-                  <Typography variant="caption" color="text.secondary">Non-Saleable</Typography>
-                  <Typography variant="h6" color="primary.main" fontWeight="bold">10</Typography>
-                </Box>
-              </Grid>
-              <Grid item xs={6} sm={3}>
-                <Box sx={{ p: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
-                  <Typography variant="caption" color="text.secondary">On Order</Typography>
-                  <Typography variant="h6" color="primary.main" fontWeight="bold">200</Typography>
-                </Box>
-              </Grid>
-              <Grid item xs={6} sm={3}>
-                <Box sx={{ p: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
-                  <Typography variant="caption" color="text.secondary">In Transit</Typography>
-                  <Typography variant="h6" color="primary.main" fontWeight="bold">75</Typography>
-                </Box>
-              </Grid>
-              <Grid item xs={6} sm={3}>
-                <Box sx={{ p: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
-                  <Typography variant="caption" color="text.secondary">Returned</Typography>
-                  <Typography variant="h6" color="primary.main" fontWeight="bold">5</Typography>
-                </Box>
-              </Grid>
-              <Grid item xs={6} sm={3}>
-                <Box sx={{ p: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
-                  <Typography variant="caption" color="text.secondary">On Hold</Typography>
-                  <Typography variant="h6" color="primary.main" fontWeight="bold">25</Typography>
-                </Box>
-              </Grid>
-              <Grid item xs={6} sm={3}>
-                <Box sx={{ p: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
-                  <Typography variant="caption" color="text.secondary">Backorder</Typography>
-                  <Typography variant="h6" color="primary.main" fontWeight="bold">100</Typography>
-                </Box>
-              </Grid>
+              {isLoadingStock ? (
+                <Grid item xs={12}>
+                  <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+                    <CircularProgress size={24} />
+                    <Typography sx={{ ml: 2 }}>Loading stock levels...</Typography>
+                  </Box>
+                </Grid>
+              ) : stockError ? (
+                <Grid item xs={12}>
+                  <Alert severity="error">{stockError}</Alert>
+                </Grid>
+              ) : (
+                <>
+                  <Grid item xs={6} sm={3}>
+                    <Box sx={{ p: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                      <Typography variant="caption" color="text.secondary">Current Stock</Typography>
+                      <Typography variant="h6" color="text.primary" fontWeight="bold">{currentStock.stockQuantity}</Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={6} sm={3}>
+                    <Box sx={{ p: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                      <Typography variant="caption" color="text.secondary">Reserved</Typography>
+                      <Typography variant="h6" color="text.primary" fontWeight="bold">{currentStock.reservedQuantity}</Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={6} sm={3}>
+                    <Box sx={{ p: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                      <Typography variant="caption" color="text.secondary">Available</Typography>
+                      <Typography variant="h6" color="text.primary" fontWeight="bold">{currentStock.availableQuantity}</Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={6} sm={3}>
+                    <Box sx={{ p: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                      <Typography variant="caption" color="text.secondary">Backorder</Typography>
+                      <Typography variant="h6" color="text.primary" fontWeight="bold">{currentStock.backorder}</Typography>
+                    </Box>
+                  </Grid>
+                </>
+              )}
             </Grid>
           </Box>
 
@@ -540,7 +615,7 @@ export default function AddInventoryPage() {
               <Grid item xs={6} sm={3}>
                 <Box sx={{ p: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
                   <Typography variant="caption" color="text.secondary">Current Stock</Typography>
-                  <Typography variant="h6" color="text.primary" fontWeight="bold">1,250</Typography>
+                  <Typography variant="h6" color="text.primary" fontWeight="bold">{currentStock.stockQuantity}</Typography>
                 </Box>
               </Grid>
               <Grid item xs={6} sm={3}>
@@ -551,14 +626,14 @@ export default function AddInventoryPage() {
                     color="success.main" 
                     fontWeight="bold"
                   >
-                    +50
+                    {adjustmentQuantity > 0 ? `+${adjustmentQuantity}` : adjustmentQuantity}
                   </Typography>
                 </Box>
               </Grid>
               <Grid item xs={6} sm={3}>
                 <Box sx={{ p: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
                   <Typography variant="caption" color="text.secondary">New Stock Level</Typography>
-                  <Typography variant="h6" color="primary.main" fontWeight="bold">1,300</Typography>
+                  <Typography variant="h6" color="primary.main" fontWeight="bold">{newStockLevel}</Typography>
                 </Box>
               </Grid>
               <Grid item xs={6} sm={3}>

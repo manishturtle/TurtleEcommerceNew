@@ -129,6 +129,7 @@ class AdjustmentReasonViewSet(TenantViewMixin, viewsets.ModelViewSet):
     Delete a specific adjustment reason.
     Note: This may be restricted if the reason has been used in adjustments.
     """
+    queryset = AdjustmentReason.objects.all()
     serializer_class = AdjustmentReasonSerializer
     permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
     pagination_class = StandardResultsSetPagination
@@ -137,7 +138,7 @@ class AdjustmentReasonViewSet(TenantViewMixin, viewsets.ModelViewSet):
             filters.SearchFilter,
             filters.OrderingFilter
         ]
-    filterset_fields = ['is_active', 'requires_note', 'requires_approval']
+    filterset_fields = ['is_active']
     search_fields = ['name', 'description']
     ordering_fields = ['name', 'created_at']
     ordering = ['name']
@@ -686,6 +687,24 @@ class LotViewSet(TenantViewMixin, viewsets.ModelViewSet):
         if instance.quantity != old_quantity:
             # In a real app, you might want to create an audit log entry here
             print(f"Lot {instance.lot_number} quantity changed from {old_quantity} to {instance.quantity}")
+
+class AdjustmentTypeView(APIView):
+    """
+    API endpoint that returns all available adjustment types.
+    This is a simple endpoint that returns the choices defined in the AdjustmentType model.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request, *args, **kwargs):
+        """
+        Return a list of all adjustment types.
+        Each type includes a code and display name.
+        """
+        adjustment_types = [
+            {'code': code, 'name': name}
+            for code, name in AdjustmentType.choices
+        ]
+        return Response(adjustment_types)
 
 class InventoryImportView(TenantViewMixin, APIView):
     """

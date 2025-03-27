@@ -8,7 +8,8 @@ from .views import (
     InventoryAdjustmentViewSet,
     SerializedInventoryViewSet,
     LotViewSet,
-    InventoryImportView
+    InventoryImportView,
+    AdjustmentTypeView
 )
 
 # Create a top-level router
@@ -27,4 +28,5 @@ urlpatterns = [
     path('', include(router.urls)),
     path('', include(inventory_router.urls)),
     path('import/', InventoryImportView.as_view(), name='inventory-import'),
+    path('adjustment-types/', AdjustmentTypeView.as_view(), name='adjustment-types'),
 ]
