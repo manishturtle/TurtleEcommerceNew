@@ -4,6 +4,7 @@ from django.core.validators import MinValueValidator
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from products.models import Product
+from tenants.models import TenantAwareModel
 
 class LocationType(models.TextChoices):
     WAREHOUSE = 'WAREHOUSE', 'Warehouse'
@@ -40,8 +41,8 @@ class LotStatus(models.TextChoices):
     QUARANTINE = 'QUARANTINE', 'In Quarantine'
     DAMAGED = 'DAMAGED', 'Damaged / Non-Saleable'
 
-class FulfillmentLocation(models.Model):
-    name = models.CharField(max_length=255, unique=True)
+class FulfillmentLocation(TenantAwareModel):
+    name = models.CharField(max_length=255)
     location_type = models.CharField(max_length=50, choices=LocationType.choices)
     address_line_1 = models.CharField(max_length=255, blank=True, null=True)
     address_line_2 = models.CharField(max_length=255, blank=True, null=True)
@@ -50,21 +51,19 @@ class FulfillmentLocation(models.Model):
     postal_code = models.CharField(max_length=20, blank=True, null=True)
     country_code = models.CharField(max_length=2, blank=True, null=True)
     is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Fulfillment Location"
         verbose_name_plural = "Fulfillment Locations"
         ordering = ['name']
+        unique_together = ('name', 'org_id')
 
     def __str__(self):
         return self.name
 
-class AdjustmentReason(models.Model):
+class AdjustmentReason(TenantAwareModel):
     name = models.CharField(
         max_length=100, 
-        unique=True, 
         help_text="Short name for the reason (e.g., 'Cycle Count Discrepancy')"
     )
     description = models.TextField(
@@ -73,18 +72,17 @@ class AdjustmentReason(models.Model):
         help_text="Optional longer description"
     )
     is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Inventory Adjustment Reason"
         verbose_name_plural = "Inventory Adjustment Reasons"
         ordering = ['name']
+        unique_together = ('name', 'org_id')
 
     def __str__(self):
         return self.name
 
-class Inventory(models.Model):
+class Inventory(TenantAwareModel):
     product = models.ForeignKey(
         Product, 
         on_delete=models.CASCADE, 
@@ -135,7 +133,7 @@ class Inventory(models.Model):
     last_updated = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ('product', 'location')
+        unique_together = ('product', 'location', 'org_id')
         verbose_name_plural = 'Inventories'
         ordering = ['product__name', 'location__name']
 
@@ -146,7 +144,7 @@ class Inventory(models.Model):
     def __str__(self):
         return f"{self.product} at {self.location}"
 
-class SerializedInventory(models.Model):
+class SerializedInventory(TenantAwareModel):
     product = models.ForeignKey(
         Product, 
         on_delete=models.CASCADE, 
@@ -196,7 +194,7 @@ class SerializedInventory(models.Model):
     class Meta:
         verbose_name = "Serialized Inventory Item"
         verbose_name_plural = "Serialized Inventory Items"
-        unique_together = ('product', 'serial_number')
+        unique_together = ('product', 'serial_number', 'org_id')
         ordering = ['product__name', 'serial_number']
         indexes = [
             models.Index(fields=['product', 'serial_number']),
@@ -224,7 +222,7 @@ class SerializedInventory(models.Model):
     def __str__(self):
         return f"{self.product.name} - SN: {self.serial_number} @ {self.location.name} ({self.status})"
 
-class Lot(models.Model):
+class Lot(TenantAwareModel):
     product = models.ForeignKey(
         Product, 
         on_delete=models.CASCADE, 
@@ -302,7 +300,7 @@ class Lot(models.Model):
     class Meta:
         verbose_name = "Inventory Lot/Batch"
         verbose_name_plural = "Inventory Lots/Batches"
-        unique_together = ('product', 'location', 'lot_number')
+        unique_together = ('product', 'location', 'lot_number', 'org_id')
         ordering = ['product', 'location', 'received_date', 'expiry_date']
         indexes = [
             models.Index(fields=['product', 'lot_number']),

@@ -10,6 +10,7 @@ from rest_framework.authtoken import views as drf_views
 # API URL patterns
 api_patterns = [
     path('inventory/', include('inventory.urls')),
+    path('tenants/', include('tenants.urls')),  # Add tenant management URLs
 ]
 
 urlpatterns = [

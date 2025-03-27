@@ -39,6 +39,7 @@ from celery.result import AsyncResult
 from rest_framework_csv.renderers import CSVRenderer
 from datetime import datetime
 from .services import perform_inventory_adjustment, update_serialized_status, reserve_serialized_item, ship_serialized_item, receive_serialized_item, find_available_serial_for_reservation
+from tenants.mixins import TenantViewMixin
 
 # Create your views here.
 
@@ -47,7 +48,7 @@ class StandardResultsSetPagination(PageNumberPagination):
     page_size_query_param = 'page_size'
     max_page_size = 100
 
-class FulfillmentLocationViewSet(viewsets.ModelViewSet):
+class FulfillmentLocationViewSet(TenantViewMixin, viewsets.ModelViewSet):
     """
     API endpoint that allows Fulfillment Locations to be viewed or edited.
     
@@ -103,7 +104,7 @@ class FulfillmentLocationViewSet(viewsets.ModelViewSet):
             )
         instance.delete()
 
-class AdjustmentReasonViewSet(viewsets.ModelViewSet):
+class AdjustmentReasonViewSet(TenantViewMixin, viewsets.ModelViewSet):
     """
     API endpoint for managing Inventory Adjustment Reasons.
     
@@ -132,34 +133,29 @@ class AdjustmentReasonViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
     pagination_class = StandardResultsSetPagination
     filter_backends = [
-        DjangoFilterBackend,
-        filters.SearchFilter,
-        filters.OrderingFilter
-    ]
+            DjangoFilterBackend,
+            filters.SearchFilter,
+            filters.OrderingFilter
+        ]
     filterset_fields = ['is_active', 'requires_note', 'requires_approval']
     search_fields = ['name', 'description']
     ordering_fields = ['name', 'created_at']
     ordering = ['name']
 
-    def get_queryset(self):
-        """
-        Return all adjustment reasons for the current tenant.
-        django-tenants handles tenant filtering automatically.
-        """
-        return AdjustmentReason.objects.all()
+    # No need for get_queryset method as TenantViewMixin handles tenant filtering
 
     def perform_destroy(self, instance):
         """
         Override destroy to check if reason has been used in adjustments.
         """
-        if instance.inventoryadjustment_set.exists():
+        # Check if this reason has been used in any adjustments
+        if instance.adjustments.exists():
             raise serializers.ValidationError(
-                "Cannot delete adjustment reason that has been used in adjustments. "
-                "Consider marking it as inactive instead."
+                "Cannot delete reason that has been used in adjustments. Consider marking it as inactive instead."
             )
         instance.delete()
 
-class InventoryViewSet(viewsets.ModelViewSet):
+class InventoryViewSet(TenantViewMixin, viewsets.ModelViewSet):
     """
     API endpoint for managing Inventory levels.
     
@@ -808,9 +804,7 @@ class InventoryViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-class InventoryAdjustmentViewSet(mixins.CreateModelMixin,
-                              mixins.ListModelMixin,
-                              viewsets.GenericViewSet):
+class InventoryAdjustmentViewSet(TenantViewMixin, viewsets.ModelViewSet):
     """
     API endpoint for creating manual Inventory Adjustments
     and listing adjustment history for a specific inventory item.
@@ -822,46 +816,38 @@ class InventoryAdjustmentViewSet(mixins.CreateModelMixin,
     pagination_class = StandardResultsSetPagination
 
     def get_serializer_class(self):
-        if self.action == 'create':
+        if self.request.method == 'POST':
             return InventoryAdjustmentCreateSerializer
         return InventoryAdjustmentSerializer
 
-    def get_queryset(self):
-        inventory_pk = self.kwargs.get('inventory_pk')
-        if inventory_pk:
-            if Inventory.objects.filter(pk=inventory_pk).exists():
-                return InventoryAdjustment.objects.filter(inventory__pk=inventory_pk) \
-                    .select_related('user', 'reason') \
-                    .order_by('-timestamp')
-        return InventoryAdjustment.objects.none()
+    # No need for get_queryset method as TenantViewMixin handles tenant filtering
 
     def perform_create(self, serializer):
-        validated_data = serializer.validated_data
-        try:
-            # Call the service function
-            adjustment = perform_inventory_adjustment(
+        with transaction.atomic():
+            # Get the validated data
+            inventory = serializer.validated_data['inventory']
+            adjustment_type = serializer.validated_data['adjustment_type']
+            quantity = serializer.validated_data['quantity']
+            reason = serializer.validated_data['reason']
+            notes = serializer.validated_data.get('notes', None)
+            serial_number = serializer.validated_data.get('serial_number', None)
+            lot_number = serializer.validated_data.get('lot_number', None)
+            expiry_date = serializer.validated_data.get('expiry_date', None)
+            
+            # Use the service function to perform the adjustment
+            perform_inventory_adjustment(
                 user=self.request.user,
-                inventory=validated_data['inventory'],
-                adjustment_type=validated_data['adjustment_type'],
-                quantity_change=validated_data['quantity_change'],
-                reason=validated_data['reason'],
-                notes=validated_data.get('notes')
+                inventory=inventory,
+                adjustment_type=adjustment_type,
+                quantity_change=quantity,
+                reason=reason,
+                notes=notes,
+                serial_number=serial_number,
+                lot_number=lot_number,
+                expiry_date=expiry_date
             )
-            # Set the instance on the serializer for the response
-            serializer.instance = adjustment
-        except DjangoValidationError as e:
-            # Catch validation errors from the service and raise DRF validation error
-            raise DRFValidationError(detail=serializers.as_serializer_error(e))
-        except Exception as e:
-            # Catch other unexpected errors from the service
-            # Consider logging the error 'e' here for debugging production issues
-            # logger.error(f"Unexpected error during inventory adjustment: {e}", exc_info=True)
-            raise DRFValidationError(detail=f"Failed to perform adjustment. An unexpected error occurred.")
 
-class SerializedInventoryViewSet(mixins.ListModelMixin,
-                               mixins.RetrieveModelMixin,
-                               mixins.UpdateModelMixin,
-                               viewsets.GenericViewSet):
+class SerializedInventoryViewSet(TenantViewMixin, viewsets.ModelViewSet):
     """
     API endpoint for viewing and updating the status of Serialized Inventory items.
     Creation/Deletion might be handled by other processes (e.g., receiving, shipping).
@@ -875,8 +861,7 @@ class SerializedInventoryViewSet(mixins.ListModelMixin,
     ordering_fields = ['serial_number', 'product__name', 'location__name', 'status', 'received_date', 'last_updated']
     ordering = ['product__name', 'serial_number']
 
-    def get_queryset(self):
-        return SerializedInventory.objects.select_related('product', 'location').all()
+    # No need for get_queryset method as TenantViewMixin handles tenant filtering
 
     def perform_update(self, serializer):
         """
@@ -885,64 +870,62 @@ class SerializedInventoryViewSet(mixins.ListModelMixin,
         """
         instance = serializer.instance
         new_status = serializer.validated_data.get('status')
-        notes = serializer.validated_data.get('notes', '')
         
         if new_status and new_status != instance.status:
-            try:
-                # Use the service function for status updates
-                update_serialized_status(
-                    serialized_item=instance,
-                    new_status=new_status,
-                    notes=notes
-                )
-                # Don't call serializer.save() as update_serialized_status already saves
-            except ValidationError as e:
-                raise DRFValidationError(detail=str(e))
-        else:
-            # For updates that don't involve status changes
-            serializer.save()
+            # Use the service function to handle status transitions
+            update_serialized_status(
+                serialized_item=instance,
+                new_status=new_status,
+                user=self.request.user,
+                notes=serializer.validated_data.get('notes')
+            )
+            # Skip the default save since the service function handles it
+            return
             
+        # For other field updates, use the default behavior
+        serializer.save(last_modified_by=self.request.user)
+
     @action(detail=True, methods=['post'])
     def reserve(self, request, pk=None):
         """
         Reserve a specific serialized inventory item.
         """
         serialized_item = self.get_object()
-        notes = request.data.get('notes', '')
         
         try:
-            reserved_item = reserve_serialized_item(
+            reserve_serialized_item(
                 serialized_item=serialized_item,
-                notes=notes
+                user=request.user,
+                notes=request.data.get('notes')
             )
-            serializer = self.get_serializer(reserved_item)
-            return Response(serializer.data)
-        except ValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-    
+            return Response(
+                {"message": f"Serial number {serialized_item.serial_number} has been reserved."},
+                status=status.HTTP_200_OK
+            )
+        except DjangoValidationError as e:
+            raise DRFValidationError(detail=str(e))
+
     @action(detail=True, methods=['post'])
     def ship(self, request, pk=None):
         """
         Mark a serialized inventory item as shipped/sold.
         """
         serialized_item = self.get_object()
-        notes = request.data.get('notes', '')
         
         try:
-            shipped_item = ship_serialized_item(
+            ship_serialized_item(
                 serialized_item=serialized_item,
-                notes=notes
+                user=request.user,
+                notes=request.data.get('notes')
             )
-            serializer = self.get_serializer(shipped_item)
-            return Response(serializer.data)
-        except ValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"message": f"Serial number {serialized_item.serial_number} has been marked as shipped."},
+                status=status.HTTP_200_OK
+            )
+        except DjangoValidationError as e:
+            raise DRFValidationError(detail=str(e))
 
-class LotViewSet(mixins.ListModelMixin,
-               mixins.RetrieveModelMixin,
-               mixins.UpdateModelMixin,
-               mixins.CreateModelMixin,
-               viewsets.GenericViewSet):
+class LotViewSet(TenantViewMixin, viewsets.ModelViewSet):
     """
     API endpoint for managing Inventory Lots.
     
@@ -971,12 +954,11 @@ class LotViewSet(mixins.ListModelMixin,
     ordering = ['product__name', 'expiry_date', 'lot_number']  # Default order for FEFO
 
     def get_serializer_class(self):
-        if self.action == 'create':
+        if self.request.method == 'POST':
             return LotCreateSerializer
         return LotSerializer
 
-    def get_queryset(self):
-        return Lot.objects.select_related('product', 'location').all()
+    # No need for get_queryset method as TenantViewMixin handles tenant filtering
 
     def perform_update(self, serializer):
         """
@@ -991,7 +973,7 @@ class LotViewSet(mixins.ListModelMixin,
             # In a real app, you might want to create an audit log entry here
             print(f"Lot {instance.lot_number} quantity changed from {old_quantity} to {instance.quantity}")
 
-class InventoryImportView(APIView):
+class InventoryImportView(TenantViewMixin, APIView):
     """
     Upload a CSV file to asynchronously import inventory data.
     Expects 'file' field in multipart/form-data.
@@ -1002,35 +984,31 @@ class InventoryImportView(APIView):
     def post(self, request, *args, **kwargs):
         serializer = InventoryImportSerializer(data=request.data)
         if serializer.is_valid():
-            file_obj = serializer.validated_data['file']
-            import_mode = serializer.validated_data['import_mode']
-            tenant_id = request.tenant.id
-            user_id = request.user.id
-
-            try:
-                # Read file and decode safely
-                file_content_bytes = file_obj.read()
-                try:
-                    file_content_str = file_content_bytes.decode('utf-8')
-                except UnicodeDecodeError:
-                    file_content_str = file_content_bytes.decode('latin-1')
-
-                # Send task to Celery
-                task = process_inventory_import.delay(tenant_id, file_content_str, user_id, import_mode)
-
-                return Response({
-                    "task_id": task.id,
-                    "status": "accepted",
-                    "message": "File upload accepted for processing"
-                }, status=status.HTTP_202_ACCEPTED)
-
-            except Exception as e:
-                return Response({
-                    "error": f"Failed to process file: {str(e)}"
-                }, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+            csv_file = serializer.validated_data['file']
+            
+            # Get the current tenant
+            tenant = self.get_tenant()
+            if not tenant:
+                return Response(
+                    {"error": "No tenant context available for this import"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            # Start async task with tenant info
+            task = process_inventory_import.delay(
+                csv_file.read().decode('utf-8'),
+                tenant_id=tenant.id,
+                tenant_schema=tenant.schema_name,
+                user_id=request.user.id
+            )
+            
+            return Response({
+                "task_id": task.id,
+                "status": "PENDING",
+                "message": "Inventory import started. Check status with GET request using task_id."
+            }, status=status.HTTP_202_ACCEPTED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
     def get(self, request, *args, **kwargs):
         """
         Check the status of an import task.
@@ -1038,18 +1016,28 @@ class InventoryImportView(APIView):
         """
         task_id = request.query_params.get('task_id')
         if not task_id:
-            return Response({
-                "error": "task_id parameter is required"
-            }, status=status.HTTP_400_BAD_REQUEST)
-
+            return Response(
+                {"error": "task_id query parameter is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
         task_result = AsyncResult(task_id)
-        result = {
-            "task_id": task_id,
-            "status": task_result.status,
-            "state": task_result.state,
-        }
-
+        
         if task_result.ready():
-            result["result"] = task_result.get() if task_result.successful() else str(task_result.result)
-
-        return Response(result)
+            if task_result.successful():
+                return Response({
+                    "task_id": task_id,
+                    "status": "SUCCESS",
+                    "result": task_result.result
+                })
+            else:
+                return Response({
+                    "task_id": task_id,
+                    "status": "FAILURE",
+                    "error": str(task_result.result)
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        else:
+            return Response({
+                "task_id": task_id,
+                "status": "PENDING"
+            })
