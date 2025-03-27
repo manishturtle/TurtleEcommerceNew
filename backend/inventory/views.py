@@ -225,9 +225,17 @@ class InventoryViewSet(TenantViewMixin, viewsets.ModelViewSet):
         Return all inventory records for the current tenant.
         django-tenants handles tenant filtering automatically.
         """
-        queryset = Inventory.objects.select_related('product', 'location').all()
+        from django.db import connection
         
-        # Annotate with available_to_promise (stock - reserved)
+        # Ensure we're using the inventory schema in the search path
+        if hasattr(connection, 'inventory_schema') and hasattr(connection, 'schema_name'):
+            with connection.cursor() as cursor:
+                cursor.execute(f'SET search_path TO "{connection.inventory_schema}", "{connection.schema_name}", public')
+        
+        # Get the queryset with tenant filtering
+        queryset = Inventory.objects.all()
+        
+        # Add available_to_promise as an annotated field
         queryset = queryset.annotate(
             available_to_promise=ExpressionWrapper(
                 F('stock_quantity') - F('reserved_quantity'),
@@ -242,17 +250,19 @@ class InventoryViewSet(TenantViewMixin, viewsets.ModelViewSet):
         """
         List all lots for a specific inventory record.
         """
+        from django.db import connection
+        
+        # Ensure we're using the inventory schema in the search path
+        if hasattr(connection, 'inventory_schema') and hasattr(connection, 'schema_name'):
+            with connection.cursor() as cursor:
+                cursor.execute(f'SET search_path TO "{connection.inventory_schema}", "{connection.schema_name}", public')
+        
         inventory = self.get_object()
-        
-        # Check if product is lot-tracked
-        if not inventory.product.is_lotted:
-            return Response(
-                {"detail": "This product is not lot-tracked."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Get all lots for this inventory
         lots = Lot.objects.filter(inventory_record=inventory)
+        
+        # Apply filters if provided
+        lot_filter = LotFilter(request.GET, queryset=lots)
+        lots = lot_filter.qs
         
         # Apply pagination
         page = self.paginate_queryset(lots)
@@ -274,113 +284,48 @@ class InventoryViewSet(TenantViewMixin, viewsets.ModelViewSet):
         - expiry_date: The expiry date for the lot (if new)
         - cost_price_per_unit: Optional cost price per unit
         """
+        from django.db import connection
+        
+        # Ensure we're using the inventory schema in the search path
+        if hasattr(connection, 'inventory_schema') and hasattr(connection, 'schema_name'):
+            with connection.cursor() as cursor:
+                cursor.execute(f'SET search_path TO "{connection.inventory_schema}", "{connection.schema_name}", public')
+        
         inventory = self.get_object()
         
-        # Check if product is lot-tracked
-        if not inventory.product.is_lotted:
-            return Response(
-                {"detail": "This product is not lot-tracked."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # Validate input
+        serializer = LotCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
-        # Validate request data
-        lot_number = request.data.get('lot_number')
-        quantity = request.data.get('quantity')
-        expiry_date = request.data.get('expiry_date')
-        cost_price_per_unit = request.data.get('cost_price_per_unit')
-        
-        if not lot_number:
-            return Response(
-                {"detail": "Lot number is required."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # Extract data
+        lot_number = serializer.validated_data.get('lot_number')
+        quantity = serializer.validated_data.get('quantity')
+        expiry_date = serializer.validated_data.get('expiry_date')
+        cost_price_per_unit = serializer.validated_data.get('cost_price_per_unit')
         
         try:
-            quantity = int(quantity)
-            if quantity <= 0:
-                return Response(
-                    {"detail": "Quantity must be a positive number."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        except (TypeError, ValueError):
-            return Response(
-                {"detail": "Invalid quantity value."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Parse expiry date if provided
-        if expiry_date:
-            try:
-                expiry_date = datetime.strptime(expiry_date, '%Y-%m-%d').date()
-            except ValueError:
-                return Response(
-                    {"detail": "Invalid expiry date format. Use YYYY-MM-DD."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        
-        # Parse cost price if provided
-        if cost_price_per_unit:
-            try:
-                from decimal import Decimal
-                cost_price_per_unit = Decimal(cost_price_per_unit)
-            except (TypeError, ValueError):
-                return Response(
-                    {"detail": "Invalid cost price value."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        
-        try:
-            # Use the service function to add quantity to the lot
+            # Import here to avoid circular imports
             from .services import add_quantity_to_lot
             
+            # Add quantity to lot
             lot = add_quantity_to_lot(
                 inventory=inventory,
                 lot_number=lot_number,
-                quantity_to_add=quantity,
+                quantity=quantity,
                 expiry_date=expiry_date,
                 cost_price_per_unit=cost_price_per_unit,
                 user=request.user
             )
             
-            # Create an adjustment record
-            reason, _ = AdjustmentReason.objects.get_or_create(
-                name="Lot Addition",
-                defaults={
-                    'description': 'Quantity added to lot',
-                    'is_active': True,
-                    'requires_note': False
-                }
-            )
-            
-            perform_inventory_adjustment(
-                user=request.user,
-                inventory=inventory,
-                adjustment_type='ADD',
-                quantity_change=quantity,
-                reason=reason,
-                notes=f"Added {quantity} units to lot {lot_number}",
-                lot_number=lot_number,
-                expiry_date=expiry_date,
-                cost_price_per_unit=cost_price_per_unit
-            )
-            
             return Response(
-                {
-                    "detail": f"Successfully added {quantity} units to lot {lot_number}",
-                    "lot": LotSerializer(lot).data
-                },
+                LotSerializer(lot).data,
                 status=status.HTTP_200_OK
-            )
-            
-        except DjangoValidationError as e:
-            return Response(
-                {"detail": str(e)},
-                status=status.HTTP_400_BAD_REQUEST
             )
         except Exception as e:
             return Response(
-                {"detail": f"An error occurred: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"detail": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
             )
     
     @action(detail=True, methods=['post'])
@@ -393,131 +338,47 @@ class InventoryViewSet(TenantViewMixin, viewsets.ModelViewSet):
         - strategy: The lot selection strategy ('FEFO' or 'FIFO')
         - lot_number: Optional specific lot number to consume from
         """
+        from django.db import connection
+        
+        # Ensure we're using the inventory schema in the search path
+        if hasattr(connection, 'inventory_schema') and hasattr(connection, 'schema_name'):
+            with connection.cursor() as cursor:
+                cursor.execute(f'SET search_path TO "{connection.inventory_schema}", "{connection.schema_name}", public')
+        
         inventory = self.get_object()
         
-        # Check if product is lot-tracked
-        if not inventory.product.is_lotted:
-            return Response(
-                {"detail": "This product is not lot-tracked."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Validate request data
+        # Validate input
         quantity = request.data.get('quantity')
-        strategy = request.data.get('strategy', 'FEFO')
-        specific_lot = request.data.get('lot_number')
+        strategy = request.data.get('strategy', 'FEFO')  # Default to FEFO
+        lot_number = request.data.get('lot_number')
         
-        try:
-            quantity = int(quantity)
-            if quantity <= 0:
-                return Response(
-                    {"detail": "Quantity must be a positive number."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        except (TypeError, ValueError):
+        if not quantity or not isinstance(quantity, (int, float)) or quantity <= 0:
             return Response(
-                {"detail": "Invalid quantity value."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        if strategy not in ['FEFO', 'FIFO']:
-            return Response(
-                {"detail": "Strategy must be either 'FEFO' or 'FIFO'."},
+                {"detail": "A positive quantity is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
         try:
-            # If specific lot is provided, consume from that lot only
-            if specific_lot:
-                try:
-                    lot = Lot.objects.get(
-                        inventory_record=inventory,
-                        lot_number=specific_lot,
-                        status=LotStatus.AVAILABLE
-                    )
-                    
-                    from .services import consume_quantity_from_lot
-                    
-                    consume_quantity_from_lot(
-                        lot=lot,
-                        quantity_to_consume=quantity,
-                        user=request.user
-                    )
-                    
-                    consumed_lots = [(lot, quantity)]
-                    
-                except Lot.DoesNotExist:
-                    return Response(
-                        {"detail": f"Lot {specific_lot} not found or not available."},
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-            else:
-                # Use the service function to find and consume from lots
-                from .services import find_lots_for_consumption, consume_quantity_from_lot
-                
-                lots_to_consume = find_lots_for_consumption(
-                    inventory=inventory,
-                    quantity_needed=quantity,
-                    strategy=strategy
-                )
-                
-                # Consume from each lot
-                consumed_lots = []
-                for lot, qty_to_consume in lots_to_consume:
-                    consume_quantity_from_lot(
-                        lot=lot,
-                        quantity_to_consume=qty_to_consume,
-                        user=request.user
-                    )
-                    consumed_lots.append((lot, qty_to_consume))
+            # Import here to avoid circular imports
+            from .services import consume_quantity_from_lot
             
-            # Create an adjustment record
-            reason, _ = AdjustmentReason.objects.get_or_create(
-                name="Lot Consumption",
-                defaults={
-                    'description': 'Quantity consumed from lots',
-                    'is_active': True,
-                    'requires_note': False
-                }
-            )
-            
-            perform_inventory_adjustment(
-                user=request.user,
+            # Consume quantity from lots
+            consumed_lots = consume_quantity_from_lot(
                 inventory=inventory,
-                adjustment_type='REMOVE',
-                quantity_change=quantity,
-                reason=reason,
-                notes=f"Consumed {quantity} units using {strategy} strategy",
-                lot_strategy=strategy
+                quantity=quantity,
+                strategy=strategy,
+                specific_lot_number=lot_number,
+                user=request.user
             )
             
-            # Prepare response data
-            consumed_data = [
-                {
-                    "lot_number": lot.lot_number,
-                    "quantity_consumed": qty_consumed,
-                    "remaining_quantity": lot.quantity
-                }
-                for lot, qty_consumed in consumed_lots
-            ]
-            
             return Response(
-                {
-                    "detail": f"Successfully consumed {quantity} units",
-                    "consumed_lots": consumed_data
-                },
+                LotSerializer(consumed_lots, many=True).data,
                 status=status.HTTP_200_OK
-            )
-            
-        except DjangoValidationError as e:
-            return Response(
-                {"detail": str(e)},
-                status=status.HTTP_400_BAD_REQUEST
             )
         except Exception as e:
             return Response(
-                {"detail": f"An error occurred: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"detail": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
             )
     
     @action(detail=True, methods=['post'])
@@ -530,131 +391,47 @@ class InventoryViewSet(TenantViewMixin, viewsets.ModelViewSet):
         - strategy: The lot selection strategy ('FEFO' or 'FIFO')
         - lot_number: Optional specific lot number to reserve from
         """
+        from django.db import connection
+        
+        # Ensure we're using the inventory schema in the search path
+        if hasattr(connection, 'inventory_schema') and hasattr(connection, 'schema_name'):
+            with connection.cursor() as cursor:
+                cursor.execute(f'SET search_path TO "{connection.inventory_schema}", "{connection.schema_name}", public')
+        
         inventory = self.get_object()
         
-        # Check if product is lot-tracked
-        if not inventory.product.is_lotted:
-            return Response(
-                {"detail": "This product is not lot-tracked."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Validate request data
+        # Validate input
         quantity = request.data.get('quantity')
-        strategy = request.data.get('strategy', 'FEFO')
-        specific_lot = request.data.get('lot_number')
+        strategy = request.data.get('strategy', 'FEFO')  # Default to FEFO
+        lot_number = request.data.get('lot_number')
         
-        try:
-            quantity = int(quantity)
-            if quantity <= 0:
-                return Response(
-                    {"detail": "Quantity must be a positive number."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        except (TypeError, ValueError):
+        if not quantity or not isinstance(quantity, (int, float)) or quantity <= 0:
             return Response(
-                {"detail": "Invalid quantity value."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        if strategy not in ['FEFO', 'FIFO']:
-            return Response(
-                {"detail": "Strategy must be either 'FEFO' or 'FIFO'."},
+                {"detail": "A positive quantity is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
         try:
-            # If specific lot is provided, reserve from that lot only
-            if specific_lot:
-                try:
-                    lot = Lot.objects.get(
-                        inventory_record=inventory,
-                        lot_number=specific_lot,
-                        status=LotStatus.AVAILABLE
-                    )
-                    
-                    from .services import reserve_lot_quantity
-                    
-                    reserve_lot_quantity(
-                        lot=lot,
-                        quantity_to_reserve=quantity,
-                        user=request.user
-                    )
-                    
-                    reserved_lots = [(lot, quantity)]
-                    
-                except Lot.DoesNotExist:
-                    return Response(
-                        {"detail": f"Lot {specific_lot} not found or not available."},
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-            else:
-                # Use the service function to find and reserve from lots
-                from .services import find_lots_for_consumption, reserve_lot_quantity
-                
-                lots_to_reserve = find_lots_for_consumption(
-                    inventory=inventory,
-                    quantity_needed=quantity,
-                    strategy=strategy
-                )
-                
-                # Reserve from each lot
-                reserved_lots = []
-                for lot, qty_to_reserve in lots_to_reserve:
-                    reserve_lot_quantity(
-                        lot=lot,
-                        quantity_to_reserve=qty_to_reserve,
-                        user=request.user
-                    )
-                    reserved_lots.append((lot, qty_to_reserve))
+            # Import here to avoid circular imports
+            from .services import reserve_lot_quantity
             
-            # Create an adjustment record
-            reason, _ = AdjustmentReason.objects.get_or_create(
-                name="Lot Reservation",
-                defaults={
-                    'description': 'Quantity reserved from lots',
-                    'is_active': True,
-                    'requires_note': False
-                }
-            )
-            
-            perform_inventory_adjustment(
-                user=request.user,
+            # Reserve quantity from lots
+            reserved_lots = reserve_lot_quantity(
                 inventory=inventory,
-                adjustment_type='RESERVE',
-                quantity_change=quantity,
-                reason=reason,
-                notes=f"Reserved {quantity} units using {strategy} strategy",
-                lot_strategy=strategy
+                quantity=quantity,
+                strategy=strategy,
+                specific_lot_number=lot_number,
+                user=request.user
             )
             
-            # Prepare response data
-            reserved_data = [
-                {
-                    "lot_number": lot.lot_number,
-                    "quantity_reserved": qty_reserved,
-                    "remaining_quantity": lot.quantity
-                }
-                for lot, qty_reserved in reserved_lots
-            ]
-            
             return Response(
-                {
-                    "detail": f"Successfully reserved {quantity} units",
-                    "reserved_lots": reserved_data
-                },
+                LotSerializer(reserved_lots, many=True).data,
                 status=status.HTTP_200_OK
-            )
-            
-        except DjangoValidationError as e:
-            return Response(
-                {"detail": str(e)},
-                status=status.HTTP_400_BAD_REQUEST
             )
         except Exception as e:
             return Response(
-                {"detail": f"An error occurred: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"detail": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
             )
     
     @action(detail=True, methods=['post'])
@@ -666,142 +443,45 @@ class InventoryViewSet(TenantViewMixin, viewsets.ModelViewSet):
         - quantity: The total quantity to release
         - lot_number: Optional specific lot number to release from
         """
+        from django.db import connection
+        
+        # Ensure we're using the inventory schema in the search path
+        if hasattr(connection, 'inventory_schema') and hasattr(connection, 'schema_name'):
+            with connection.cursor() as cursor:
+                cursor.execute(f'SET search_path TO "{connection.inventory_schema}", "{connection.schema_name}", public')
+        
         inventory = self.get_object()
         
-        # Check if product is lot-tracked
-        if not inventory.product.is_lotted:
-            return Response(
-                {"detail": "This product is not lot-tracked."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Validate request data
+        # Validate input
         quantity = request.data.get('quantity')
-        specific_lot = request.data.get('lot_number')
+        lot_number = request.data.get('lot_number')
         
-        try:
-            quantity = int(quantity)
-            if quantity <= 0:
-                return Response(
-                    {"detail": "Quantity must be a positive number."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        except (TypeError, ValueError):
+        if not quantity or not isinstance(quantity, (int, float)) or quantity <= 0:
             return Response(
-                {"detail": "Invalid quantity value."},
+                {"detail": "A positive quantity is required."},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
         try:
-            # If specific lot is provided, release from that lot only
-            if specific_lot:
-                try:
-                    lot = Lot.objects.get(
-                        inventory_record=inventory,
-                        lot_number=specific_lot,
-                        status=LotStatus.RESERVED
-                    )
-                    
-                    from .services import release_lot_reservation
-                    
-                    release_lot_reservation(
-                        reserved_lot=lot,
-                        quantity_to_release=quantity,
-                        user=request.user
-                    )
-                    
-                    released_lots = [(lot, quantity)]
-                    
-                except Lot.DoesNotExist:
-                    return Response(
-                        {"detail": f"Reserved lot {specific_lot} not found."},
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-            else:
-                # Find reserved lots to release from
-                reserved_lots = Lot.objects.filter(
-                    inventory_record=inventory,
-                    status=LotStatus.RESERVED
-                ).order_by('received_date')
-                
-                if not reserved_lots.exists():
-                    return Response(
-                        {"detail": "No reserved lots found for this inventory."},
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-                
-                # Release from each lot
-                from .services import release_lot_reservation
-                
-                quantity_to_release = quantity
-                released_lots = []
-                
-                for reserved_lot in reserved_lots:
-                    qty_from_this_lot = min(reserved_lot.quantity, quantity_to_release)
-                    if qty_from_this_lot > 0:
-                        release_lot_reservation(
-                            reserved_lot=reserved_lot,
-                            quantity_to_release=qty_from_this_lot,
-                            user=request.user
-                        )
-                        released_lots.append((reserved_lot, qty_from_this_lot))
-                        quantity_to_release -= qty_from_this_lot
-                    
-                    if quantity_to_release <= 0:
-                        break
-                
-                if quantity_to_release > 0:
-                    return Response(
-                        {"detail": f"Could only release {quantity - quantity_to_release} units out of {quantity} requested."},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+            # Import here to avoid circular imports
+            from .services import release_lot_reservation
             
-            # Create an adjustment record
-            reason, _ = AdjustmentReason.objects.get_or_create(
-                name="Lot Reservation Release",
-                defaults={
-                    'description': 'Reserved quantity released from lots',
-                    'is_active': True,
-                    'requires_note': False
-                }
-            )
-            
-            perform_inventory_adjustment(
-                user=request.user,
+            # Release reserved quantity
+            released_lots = release_lot_reservation(
                 inventory=inventory,
-                adjustment_type='RELEASE_RESERVATION',
-                quantity_change=quantity,
-                reason=reason,
-                notes=f"Released {quantity} units from reservation"
+                quantity=quantity,
+                specific_lot_number=lot_number,
+                user=request.user
             )
             
-            # Prepare response data
-            released_data = [
-                {
-                    "lot_number": lot.lot_number,
-                    "quantity_released": qty_released,
-                    "remaining_quantity": lot.quantity
-                }
-                for lot, qty_released in released_lots
-            ]
-            
             return Response(
-                {
-                    "detail": f"Successfully released {quantity} units from reservation",
-                    "released_lots": released_data
-                },
+                LotSerializer(released_lots, many=True).data,
                 status=status.HTTP_200_OK
-            )
-            
-        except DjangoValidationError as e:
-            return Response(
-                {"detail": str(e)},
-                status=status.HTTP_400_BAD_REQUEST
             )
         except Exception as e:
             return Response(
-                {"detail": f"An error occurred: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"detail": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
             )
 
 class InventoryAdjustmentViewSet(TenantViewMixin, viewsets.ModelViewSet):
@@ -958,12 +638,46 @@ class LotViewSet(TenantViewMixin, viewsets.ModelViewSet):
             return LotCreateSerializer
         return LotSerializer
 
-    # No need for get_queryset method as TenantViewMixin handles tenant filtering
+    def get_queryset(self):
+        """
+        Override get_queryset to ensure we're using the inventory schema
+        """
+        from django.db import connection
+        
+        # Ensure we're using the inventory schema in the search path
+        if hasattr(connection, 'inventory_schema') and hasattr(connection, 'schema_name'):
+            with connection.cursor() as cursor:
+                cursor.execute(f'SET search_path TO "{connection.inventory_schema}", "{connection.schema_name}", public')
+        
+        # Get the queryset with tenant filtering from TenantViewMixin
+        return super().get_queryset()
+
+    def perform_create(self, serializer):
+        """
+        Override perform_create to ensure we're using the inventory schema
+        """
+        from django.db import connection
+        
+        # Ensure we're using the inventory schema in the search path
+        if hasattr(connection, 'inventory_schema') and hasattr(connection, 'schema_name'):
+            with connection.cursor() as cursor:
+                cursor.execute(f'SET search_path TO "{connection.inventory_schema}", "{connection.schema_name}", public')
+        
+        # Save the instance
+        serializer.save()
 
     def perform_update(self, serializer):
         """
-        Override perform_update to add logging for quantity changes
+        Override perform_update to add logging for quantity changes and ensure
+        we're using the inventory schema
         """
+        from django.db import connection
+        
+        # Ensure we're using the inventory schema in the search path
+        if hasattr(connection, 'inventory_schema') and hasattr(connection, 'schema_name'):
+            with connection.cursor() as cursor:
+                cursor.execute(f'SET search_path TO "{connection.inventory_schema}", "{connection.schema_name}", public')
+        
         old_instance = self.get_object()
         old_quantity = old_instance.quantity
         instance = serializer.save()
@@ -1040,4 +754,4 @@ class InventoryImportView(TenantViewMixin, APIView):
             return Response({
                 "task_id": task_id,
                 "status": "PENDING"
-            })
+            }, status=status.HTTP_200_OK)

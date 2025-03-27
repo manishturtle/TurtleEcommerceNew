@@ -320,8 +320,38 @@ class LotCreateSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        # Create the lot
-        lot = super().create(validated_data)
+        from django.db import connection
+        
+        # Ensure we're using the inventory schema in the search path
+        if hasattr(connection, 'inventory_schema') and hasattr(connection, 'schema_name'):
+            with connection.cursor() as cursor:
+                # Explicitly set search path to prioritize inventory schema
+                cursor.execute(f'SET search_path TO "{connection.inventory_schema}", "{connection.schema_name}", public')
+                
+                # Log the current search path for debugging
+                cursor.execute("SHOW search_path")
+                current_search_path = cursor.fetchone()[0]
+                print(f"Current search path: {current_search_path}")
+        
+        # Create the lot directly using the model's save method which now handles schema explicitly
+        lot = Lot(**validated_data)
+        lot.save()  # This will use InventoryAwareModel's enhanced save method
+        
+        # Verify the lot was created in the correct schema
+        if hasattr(connection, 'inventory_schema'):
+            with connection.cursor() as cursor:
+                # Check which schema the lot was created in
+                cursor.execute(f"""
+                    SELECT table_schema 
+                    FROM information_schema.tables 
+                    WHERE table_name = 'inventory_lot' 
+                    AND table_schema = '{connection.inventory_schema}'
+                """)
+                schema_result = cursor.fetchone()
+                if schema_result:
+                    print(f"Lot created in schema: {schema_result[0]}")
+                else:
+                    print("WARNING: Lot may not have been created in the inventory schema!")
         
         # Create initial inventory record if needed
         inventory, created = Inventory.objects.get_or_create(

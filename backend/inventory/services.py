@@ -720,28 +720,106 @@ def add_quantity_to_lot(
     Raises:
         ValidationError: If the product is not lot-tracked or quantity is invalid
     """
+    from django.db import connection
+    
     if quantity_to_add <= 0:
         raise ValidationError("Quantity to add must be positive.")
     
     if not inventory.product.is_lotted:
         raise ValidationError("Product is not tracked by lot number.")
     
+    # Ensure we're using the inventory schema in the search path
+    if hasattr(connection, 'inventory_schema') and hasattr(connection, 'schema_name'):
+        with connection.cursor() as cursor:
+            # Explicitly set search path to prioritize inventory schema
+            cursor.execute(f'SET search_path TO "{connection.inventory_schema}", "{connection.schema_name}", public')
+            
+            # Log the current search path for debugging
+            cursor.execute("SHOW search_path")
+            current_search_path = cursor.fetchone()[0]
+            print(f"Current search path for add_quantity_to_lot: {current_search_path}")
+            
+            # Check if the lot table exists in the inventory schema
+            cursor.execute(f"""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_schema = '{connection.inventory_schema}'
+                    AND table_name = 'inventory_lot'
+                )
+            """)
+            table_exists = cursor.fetchone()[0]
+            if not table_exists:
+                print(f"WARNING: inventory_lot table does not exist in {connection.inventory_schema} schema!")
+    
     # Lock the inventory record to prevent race conditions
     inventory = Inventory.objects.select_for_update().get(pk=inventory.pk)
     
-    lot, created = Lot.objects.get_or_create(
-        inventory_record=inventory,
-        product=inventory.product,
-        location=inventory.location,
-        lot_number=lot_number,
-        defaults={
-            'quantity': quantity_to_add,
-            'expiry_date': expiry_date,
-            'received_date': received_date or timezone.now().date(),
-            'cost_price_per_unit': cost_price_per_unit,
-            'last_modified_by': user
-        }
-    )
+    # Check if the lot already exists - use direct SQL to ensure correct schema
+    lot = None
+    created = False
+    
+    if hasattr(connection, 'inventory_schema'):
+        with connection.cursor() as cursor:
+            # Try to find the lot in the inventory schema
+            cursor.execute(f"""
+                SELECT id FROM "{connection.inventory_schema}"."inventory_lot"
+                WHERE inventory_record_id = %s
+                AND product_id = %s
+                AND location_id = %s
+                AND lot_number = %s
+                AND status = 'AVAILABLE'
+            """, [inventory.id, inventory.product.id, inventory.location.id, lot_number])
+            
+            result = cursor.fetchone()
+            if result:
+                # Lot exists, get it
+                lot_id = result[0]
+                try:
+                    lot = Lot.objects.get(pk=lot_id)
+                    created = False
+                except Lot.DoesNotExist:
+                    print(f"WARNING: Found lot ID {lot_id} in database but couldn't retrieve via ORM!")
+            else:
+                # Create new lot directly in the inventory schema
+                created = True
+                lot = Lot(
+                    inventory_record=inventory,
+                    product=inventory.product,
+                    location=inventory.location,
+                    lot_number=lot_number,
+                    quantity=quantity_to_add,
+                    expiry_date=expiry_date,
+                    received_date=received_date or timezone.now().date(),
+                    cost_price_per_unit=cost_price_per_unit,
+                    last_modified_by=user
+                )
+                lot.save()
+    else:
+        # Fallback if no inventory schema is set
+        try:
+            lot = Lot.objects.get(
+                inventory_record=inventory,
+                product=inventory.product,
+                location=inventory.location,
+                lot_number=lot_number,
+                status=LotStatus.AVAILABLE
+            )
+            created = False
+        except Lot.DoesNotExist:
+            # Create new lot
+            lot = Lot(
+                inventory_record=inventory,
+                product=inventory.product,
+                location=inventory.location,
+                lot_number=lot_number,
+                quantity=quantity_to_add,
+                expiry_date=expiry_date,
+                received_date=received_date or timezone.now().date(),
+                cost_price_per_unit=cost_price_per_unit,
+                last_modified_by=user
+            )
+            lot.save()
+            created = True
     
     if not created:
         # Lot exists, add quantity atomically
@@ -756,6 +834,34 @@ def add_quantity_to_lot(
         lot.last_modified_by = user
         lot.save(update_fields=['quantity', 'last_updated', 'last_modified_by'])
         lot.refresh_from_db()  # Get the updated quantity
+    
+    # Verify the lot was saved in the correct schema
+    if hasattr(connection, 'inventory_schema'):
+        with connection.cursor() as cursor:
+            cursor.execute(f"""
+                SELECT EXISTS (
+                    SELECT 1 FROM "{connection.inventory_schema}"."inventory_lot"
+                    WHERE id = %s
+                )
+            """, [lot.id])
+            exists_in_inventory_schema = cursor.fetchone()[0]
+            
+            if exists_in_inventory_schema:
+                print(f"Lot {lot.id} exists in the inventory schema {connection.inventory_schema}")
+            else:
+                print(f"WARNING: Lot {lot.id} does NOT exist in the inventory schema {connection.inventory_schema}!")
+                
+                # Check if it exists in the public schema
+                cursor.execute(f"""
+                    SELECT EXISTS (
+                        SELECT 1 FROM public.inventory_lot
+                        WHERE id = %s
+                    )
+                """, [lot.id])
+                exists_in_public = cursor.fetchone()[0]
+                
+                if exists_in_public:
+                    print(f"WARNING: Lot {lot.id} exists in the PUBLIC schema instead!")
     
     # Note: This doesn't increase Inventory summary quantity.
     # That should be done via perform_inventory_adjustment(type='ADD').
@@ -785,24 +891,34 @@ def consume_quantity_from_lot(
     Raises:
         ValidationError: If the quantity to consume exceeds available quantity
     """
+    from django.db import connection
+    
     if quantity_to_consume <= 0:
         raise ValidationError("Quantity to consume must be positive.")
+    
+    if quantity_to_consume > lot.quantity:
+        raise ValidationError(f"Cannot consume {quantity_to_consume} from lot {lot.lot_number}. Only {lot.quantity} available.")
+    
+    # Ensure we're using the inventory schema in the search path
+    if hasattr(connection, 'inventory_schema') and hasattr(connection, 'schema_name'):
+        with connection.cursor() as cursor:
+            cursor.execute(f'SET search_path TO "{connection.inventory_schema}", "{connection.schema_name}", public')
     
     # Lock the lot record to prevent race conditions
     lot = Lot.objects.select_for_update().get(pk=lot.pk)
     
-    if lot.quantity < quantity_to_consume:
-        raise ValidationError(
-            f"Insufficient quantity in Lot {lot.lot_number} ({lot.quantity}) to consume {quantity_to_consume}."
-        )
-    
-    # Update the quantity directly instead of using F()
+    # Update the quantity
     lot.quantity -= quantity_to_consume
     lot.last_modified_by = user
-    lot.save(update_fields=['quantity', 'last_updated', 'last_modified_by'])
     
-    # Note: Doesn't decrease Inventory summary quantity. Use perform_inventory_adjustment.
-    print(f"Consumed {quantity_to_consume} from Lot {lot.lot_number} ({lot.product.sku}). New Qty: {lot.quantity}.")
+    # If quantity is now zero, mark as consumed
+    if lot.quantity == 0:
+        lot.status = LotStatus.CONSUMED
+    
+    lot.save(update_fields=['quantity', 'status', 'last_updated', 'last_modified_by'])
+    lot.refresh_from_db()  # Get the updated quantity
+    
+    print(f"Consumed {quantity_to_consume} from Lot {lot.lot_number} ({lot.product.sku}). Remaining: {lot.quantity}.")
     return lot
 
 
@@ -909,45 +1025,48 @@ def reserve_lot_quantity(
     Returns:
         The updated Lot instance
     """
+    from django.db import connection
+    
     if quantity_to_reserve <= 0:
         raise ValidationError("Quantity to reserve must be positive.")
     
-    # Lock the lot record
+    if quantity_to_reserve > lot.quantity:
+        raise ValidationError(f"Cannot reserve {quantity_to_reserve} from lot {lot.lot_number}. Only {lot.quantity} available.")
+    
+    # Ensure we're using the inventory schema in the search path
+    if hasattr(connection, 'inventory_schema') and hasattr(connection, 'schema_name'):
+        with connection.cursor() as cursor:
+            cursor.execute(f'SET search_path TO "{connection.inventory_schema}", "{connection.schema_name}", public')
+    
+    # Lock the lot record to prevent race conditions
     lot = Lot.objects.select_for_update().get(pk=lot.pk)
     
-    if lot.status != LotStatus.AVAILABLE:
-        raise ValidationError(f"Cannot reserve from lot with status {lot.status}.")
-    
-    if lot.quantity < quantity_to_reserve:
-        raise ValidationError(
-            f"Insufficient quantity in Lot {lot.lot_number} ({lot.quantity}) to reserve {quantity_to_reserve}."
-        )
-    
-    # If we're reserving the entire lot, update the status
-    if lot.quantity == quantity_to_reserve:
-        lot.status = LotStatus.RESERVED
-    
-    # Update the quantity directly instead of using F()
-    lot.quantity -= quantity_to_reserve
-    lot.last_modified_by = user
-    lot.save()
-    
-    # Create a new lot record with the reserved quantity
+    # Create a new reserved lot with the same properties but RESERVED status
     reserved_lot = Lot.objects.create(
         product=lot.product,
         location=lot.location,
         inventory_record=lot.inventory_record,
-        lot_number=f"{lot.lot_number}_RESERVED",  # Use a modified lot number to avoid unique constraint
+        lot_number=lot.lot_number,
         quantity=quantity_to_reserve,
-        status=LotStatus.RESERVED,
         expiry_date=lot.expiry_date,
-        manufacturing_date=lot.manufacturing_date,
         received_date=lot.received_date,
         cost_price_per_unit=lot.cost_price_per_unit,
-        notes=f"Reserved from lot {lot.id}",
+        status=LotStatus.RESERVED,
+        parent_lot=lot,
         last_modified_by=user
     )
     
+    # Decrease the quantity in the original lot
+    lot.quantity -= quantity_to_reserve
+    lot.last_modified_by = user
+    
+    # If all quantity is now reserved, mark the original lot as consumed
+    if lot.quantity == 0:
+        lot.status = LotStatus.CONSUMED
+    
+    lot.save(update_fields=['quantity', 'status', 'last_updated', 'last_modified_by'])
+    
+    print(f"Reserved {quantity_to_reserve} from Lot {lot.lot_number}. Original lot remaining: {lot.quantity}.")
     return reserved_lot
 
 
@@ -969,31 +1088,38 @@ def release_lot_reservation(
     Returns:
         The updated available Lot instance
     """
+    from django.db import connection
+    
     if quantity_to_release <= 0:
         raise ValidationError("Quantity to release must be positive.")
     
-    # Lock the lot record
-    reserved_lot = Lot.objects.select_for_update().get(pk=reserved_lot.pk)
-    
     if reserved_lot.status != LotStatus.RESERVED:
-        raise ValidationError(f"Can only release lots with RESERVED status, not {reserved_lot.status}.")
+        raise ValidationError(f"Cannot release reservation on lot with status {reserved_lot.status}.")
     
-    if reserved_lot.quantity < quantity_to_release:
+    if quantity_to_release > reserved_lot.quantity:
         raise ValidationError(
-            f"Cannot release {quantity_to_release} from reservation, only {reserved_lot.quantity} is reserved."
+            f"Cannot release {quantity_to_release} from reserved lot {reserved_lot.lot_number}. "
+            f"Only {reserved_lot.quantity} reserved."
         )
     
-    # Find or create an available lot with the same lot number
+    # Ensure we're using the inventory schema in the search path
+    if hasattr(connection, 'inventory_schema') and hasattr(connection, 'schema_name'):
+        with connection.cursor() as cursor:
+            cursor.execute(f'SET search_path TO "{connection.inventory_schema}", "{connection.schema_name}", public')
+    
+    # Lock the reserved lot record to prevent race conditions
+    reserved_lot = Lot.objects.select_for_update().get(pk=reserved_lot.pk)
+    
+    # Find or create the available lot with the same properties
     available_lot, created = Lot.objects.get_or_create(
         product=reserved_lot.product,
         location=reserved_lot.location,
         inventory_record=reserved_lot.inventory_record,
-        lot_number=reserved_lot.lot_number.replace("_RESERVED", ""),
+        lot_number=reserved_lot.lot_number,
         status=LotStatus.AVAILABLE,
         defaults={
             'quantity': 0,
             'expiry_date': reserved_lot.expiry_date,
-            'manufacturing_date': reserved_lot.manufacturing_date,
             'received_date': reserved_lot.received_date,
             'cost_price_per_unit': reserved_lot.cost_price_per_unit,
             'last_modified_by': user
@@ -1002,15 +1128,22 @@ def release_lot_reservation(
     
     # Update the quantities
     available_lot.quantity += quantity_to_release
-    available_lot.save(update_fields=['quantity', 'last_updated'])
-    available_lot.refresh_from_db()
+    available_lot.last_modified_by = user
+    available_lot.save(update_fields=['quantity', 'last_updated', 'last_modified_by'])
     
     # Update the reserved lot
     reserved_lot.quantity -= quantity_to_release
+    reserved_lot.last_modified_by = user
+    
     if reserved_lot.quantity == 0:
-        reserved_lot.delete()  # Remove the reserved lot if quantity is zero
+        # If all quantity is released, delete the reserved lot
+        reserved_lot.delete()
+        print(f"Released all {quantity_to_release} from reserved Lot {reserved_lot.lot_number}. Reserved lot deleted.")
     else:
-        reserved_lot.save()
+        # Otherwise just update the quantity
+        reserved_lot.save(update_fields=['quantity', 'last_updated', 'last_modified_by'])
+        print(f"Released {quantity_to_release} from reserved Lot {reserved_lot.lot_number}. "
+              f"Reserved quantity remaining: {reserved_lot.quantity}.")
     
     return available_lot
 

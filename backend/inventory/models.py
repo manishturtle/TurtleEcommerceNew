@@ -1,10 +1,136 @@
-from django.db import models
+from django.db import models, connection
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from products.models import Product
 from tenants.models import TenantAwareModel
+
+class InventoryAwareModel(TenantAwareModel):
+    """
+    Abstract base model for all inventory-related models.
+    Ensures that inventory models are stored in the tenant's inventory schema.
+    """
+    class Meta:
+        abstract = True
+        
+    @classmethod
+    def get_db_table(cls):
+        """
+        Returns the database table name with the inventory schema prefix.
+        """
+        if hasattr(connection, 'inventory_schema'):
+            return f'"{connection.inventory_schema}"."{cls._meta.db_table}"'
+        return cls._meta.db_table
+    
+    @classmethod
+    def check_table_exists(cls):
+        """
+        Check if the table exists in the inventory schema.
+        """
+        if hasattr(connection, 'inventory_schema'):
+            with connection.cursor() as cursor:
+                cursor.execute(f"""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_schema = %s
+                        AND table_name = %s
+                    )
+                """, [connection.inventory_schema, cls._meta.db_table])
+                return cursor.fetchone()[0]
+        return False
+    
+    @classmethod
+    def create_table_if_not_exists(cls):
+        """
+        Create the table in the inventory schema if it doesn't exist.
+        """
+        if hasattr(connection, 'inventory_schema') and not cls.check_table_exists():
+            from django.apps import apps
+            from django.db import models
+            
+            # Get the model's fields
+            fields = []
+            for field in cls._meta.fields:
+                if isinstance(field, models.AutoField):
+                    fields.append(f"{field.column} SERIAL PRIMARY KEY")
+                elif isinstance(field, models.CharField):
+                    fields.append(f"{field.column} VARCHAR({field.max_length})")
+                # Add more field types as needed
+            
+            # Create the table
+            with connection.cursor() as cursor:
+                cursor.execute(f"""
+                    CREATE TABLE IF NOT EXISTS "{connection.inventory_schema}"."{cls._meta.db_table}" (
+                        {', '.join(fields)}
+                    )
+                """)
+    
+    def get_table_name(self):
+        """
+        Returns the fully qualified table name for this model instance.
+        """
+        if hasattr(connection, 'inventory_schema'):
+            return f'"{connection.inventory_schema}"."{self.__class__._meta.db_table}"'
+        return self.__class__._meta.db_table
+        
+    def save(self, *args, **kwargs):
+        # Set the current time for created_at and updated_at
+        if not self.pk:
+            self.created_at = timezone.now()
+        self.updated_at = timezone.now()
+        
+        # Set org_id based on the current schema if not already set
+        if not self.org_id and hasattr(connection, 'schema_name') and connection.schema_name != 'public':
+            # Get the tenant ID based on the schema name
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT id FROM public.tenants_tenant WHERE schema_name = %s", [connection.schema_name])
+                result = cursor.fetchone()
+                if result:
+                    self.org_id = result[0]
+        
+        # Use the inventory schema for saving
+        if hasattr(connection, 'inventory_schema'):
+            # Ensure the table exists in the inventory schema
+            self.__class__.create_table_if_not_exists()
+            
+            # Direct SQL insert/update to ensure it goes to the correct schema
+            with connection.cursor() as cursor:
+                # Set search path to prioritize inventory schema
+                cursor.execute(f'SET search_path TO "{connection.inventory_schema}", "{connection.schema_name}", public')
+                
+                # Get field values
+                fields = {}
+                for field in self.__class__._meta.fields:
+                    if not field.primary_key or self.pk:  # Skip auto-incrementing PK on insert
+                        fields[field.column] = getattr(self, field.name)
+                
+                if self.pk:
+                    # UPDATE
+                    set_clause = ", ".join([f"{k} = %s" for k in fields.keys()])
+                    values = list(fields.values())
+                    values.append(self.pk)
+                    cursor.execute(
+                        f'UPDATE "{connection.inventory_schema}"."{self.__class__._meta.db_table}" SET {set_clause} WHERE id = %s',
+                        values
+                    )
+                else:
+                    # INSERT
+                    columns = ", ".join(fields.keys())
+                    placeholders = ", ".join(["%s"] * len(fields))
+                    values = list(fields.values())
+                    cursor.execute(
+                        f'INSERT INTO "{connection.inventory_schema}"."{self.__class__._meta.db_table}" ({columns}) VALUES ({placeholders}) RETURNING id',
+                        values
+                    )
+                    # Set the new ID
+                    self.pk = cursor.fetchone()[0]
+                
+                # Reset search path
+                cursor.execute(f'SET search_path TO "{connection.schema_name}", "{connection.inventory_schema}", public')
+        else:
+            # Fall back to Django ORM if no inventory schema
+            super().save(*args, **kwargs)
 
 class LocationType(models.TextChoices):
     WAREHOUSE = 'WAREHOUSE', 'Warehouse'
@@ -41,7 +167,7 @@ class LotStatus(models.TextChoices):
     QUARANTINE = 'QUARANTINE', 'In Quarantine'
     DAMAGED = 'DAMAGED', 'Damaged / Non-Saleable'
 
-class FulfillmentLocation(TenantAwareModel):
+class FulfillmentLocation(InventoryAwareModel):
     name = models.CharField(max_length=255)
     location_type = models.CharField(max_length=50, choices=LocationType.choices)
     address_line_1 = models.CharField(max_length=255, blank=True, null=True)
@@ -61,7 +187,7 @@ class FulfillmentLocation(TenantAwareModel):
     def __str__(self):
         return self.name
 
-class AdjustmentReason(TenantAwareModel):
+class AdjustmentReason(InventoryAwareModel):
     name = models.CharField(
         max_length=100, 
         help_text="Short name for the reason (e.g., 'Cycle Count Discrepancy')"
@@ -82,7 +208,7 @@ class AdjustmentReason(TenantAwareModel):
     def __str__(self):
         return self.name
 
-class Inventory(TenantAwareModel):
+class Inventory(InventoryAwareModel):
     product = models.ForeignKey(
         Product, 
         on_delete=models.CASCADE, 
@@ -144,7 +270,7 @@ class Inventory(TenantAwareModel):
     def __str__(self):
         return f"{self.product} at {self.location}"
 
-class SerializedInventory(TenantAwareModel):
+class SerializedInventory(InventoryAwareModel):
     product = models.ForeignKey(
         Product, 
         on_delete=models.CASCADE, 
@@ -222,7 +348,12 @@ class SerializedInventory(TenantAwareModel):
     def __str__(self):
         return f"{self.product.name} - SN: {self.serial_number} @ {self.location.name} ({self.status})"
 
-class Lot(TenantAwareModel):
+class Lot(InventoryAwareModel):
+    """
+    Represents a specific batch or lot of a product.
+    Lots are used for tracking products with expiry dates, manufacturing dates,
+    or other batch-specific attributes.
+    """
     product = models.ForeignKey(
         Product, 
         on_delete=models.CASCADE, 
@@ -296,11 +427,20 @@ class Lot(TenantAwareModel):
         related_name='modified_lots',
         help_text="User who last modified this record"
     )
+    # Add a parent_lot field for tracking lot splits and reservations
+    parent_lot = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='child_lots',
+        help_text="Parent lot if this was split from another lot"
+    )
 
     class Meta:
         verbose_name = "Inventory Lot/Batch"
         verbose_name_plural = "Inventory Lots/Batches"
-        unique_together = ('product', 'location', 'lot_number', 'org_id')
+        unique_together = ('product', 'location', 'lot_number', 'org_id', 'status')
         ordering = ['product', 'location', 'received_date', 'expiry_date']
         indexes = [
             models.Index(fields=['product', 'lot_number']),
@@ -325,10 +465,11 @@ class Lot(TenantAwareModel):
                 raise ValidationError("Expiry date must be after manufacturing date.")
 
     def save(self, *args, **kwargs):
-        self.clean()
         # Update status if expired
         if self.expiry_date and self.expiry_date < timezone.now().date():
             self.status = LotStatus.EXPIRED
+            
+        # Call the InventoryAwareModel save method which handles schema
         super().save(*args, **kwargs)
 
     def is_expired(self):
@@ -341,7 +482,7 @@ class Lot(TenantAwareModel):
         expiry_str = f", Expires: {self.expiry_date}" if self.expiry_date else ""
         return f"Lot: {self.lot_number} ({self.product.name} @ {self.location.name}) - Qty: {self.quantity}{status_str}{expiry_str}"
 
-class InventoryAdjustment(models.Model):
+class InventoryAdjustment(InventoryAwareModel):
     inventory = models.ForeignKey(
         Inventory, 
         on_delete=models.CASCADE, 

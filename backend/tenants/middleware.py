@@ -38,11 +38,17 @@ class TenantMiddleware(MiddlewareMixin):
             else:
                 connection.schema_name = tenant.schema_name
             
-            # Set the PostgreSQL search_path to use the tenant schema
-            with connection.cursor() as cursor:
-                cursor.execute(f'SET search_path TO "{tenant.schema_name}", public')
+            # Define inventory schema
+            inventory_schema = f"{tenant.schema_name}_inventory"
             
-            logger.debug(f"Set tenant schema to {tenant.schema_name} for {hostname}")
+            # Store inventory schema on connection for easy access
+            connection.inventory_schema = inventory_schema
+            
+            # Set the PostgreSQL search_path to use the tenant schema and inventory schema
+            with connection.cursor() as cursor:
+                cursor.execute(f'SET search_path TO "{tenant.schema_name}", "{inventory_schema}", public')
+            
+            logger.debug(f"Set tenant schema to {tenant.schema_name} and inventory schema to {inventory_schema} for {hostname}")
             
         except Domain.DoesNotExist:
             # If no matching domain is found, use the public schema
