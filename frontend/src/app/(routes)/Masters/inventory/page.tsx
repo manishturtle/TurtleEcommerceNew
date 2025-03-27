@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import PageTitle from '@/app/components/PageTitle';
 import DateRangePicker from '@/app/components/DateRangePicker';
+import Link from 'next/link';
 import { 
   Box, 
   Typography, 
@@ -487,7 +488,8 @@ export default function InventoryPage() {
           <Button 
             variant="contained" 
             startIcon={<AddIcon />}
-            onClick={() => handleOpenForm()}
+            component={Link}
+            href="/Masters/inventory/add"
           >
             New Item
           </Button>

@@ -5,12 +5,14 @@ import { useLanguage } from '@/app/i18n/LanguageContext';
 import { getTranslation } from '@/app/i18n/languageUtils';
 
 interface PageTitleProps {
-  titleKey: string;
+  titleKey?: string;
   descriptionKey?: string;
+  title?: string;
+  description?: string;
   children?: React.ReactNode;
 }
 
-export default function PageTitle({ titleKey, descriptionKey, children }: PageTitleProps) {
+export default function PageTitle({ titleKey, descriptionKey, title, description, children }: PageTitleProps) {
   const { currentLanguage } = useLanguage();
   
   // Function to translate text
@@ -18,9 +20,9 @@ export default function PageTitle({ titleKey, descriptionKey, children }: PageTi
   
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">{t(titleKey)}</h1>
-      {descriptionKey && (
-        <p className="text-gray-600">{t(descriptionKey)}</p>
+      <h1 className="text-2xl font-bold">{title || (titleKey ? t(titleKey) : '')}</h1>
+      {(description || descriptionKey) && (
+        <p className="text-gray-600">{description || (descriptionKey ? t(descriptionKey) : '')}</p>
       )}
       {children}
     </div>
