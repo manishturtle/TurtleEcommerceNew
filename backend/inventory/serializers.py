@@ -414,3 +414,11 @@ class InventoryAdjustmentSerializer(serializers.ModelSerializer):
             'reason', 'new_stock_quantity', 'notes', 'timestamp'
         ]
         read_only_fields = fields
+
+class InventoryImportSerializer(serializers.Serializer):
+    file = serializers.FileField(help_text="CSV file containing inventory data (SKU, Location Name, Quantity, [optional: Cost])")
+    import_mode = serializers.ChoiceField(
+        choices=[('overwrite', 'Overwrite'), ('update', 'Update')],
+        default='update',
+        help_text="Import mode: 'overwrite' replaces existing stock, 'update' adds/subtracts from current stock"
+    )
