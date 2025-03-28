@@ -256,66 +256,49 @@ export default function AddInventoryPage() {
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 2, sm: 3 } }}>
                   {/* Product Field */}
                   <Box>
-                    <Typography variant="body2" fontWeight="500" color="text.secondary" mb={0.5}>
-                      Product <Box component="span" sx={{ color: 'error.main' }}>*</Box>
-                    </Typography>
                     <Controller
                       name="product"
                       control={control}
                       render={({ field }) => (
-                        <FormControl error={!!errors.product} fullWidth>
-                          <TextField
-                            {...field}
-                            placeholder="Search product by name or SKU"
-                            variant="outlined"
-                            error={!!errors.product}
-                            helperText={errors.product?.message}
-                            size="small"
-                            InputProps={{
-                              endAdornment: (
-                                <InputAdornment position="end">
-                                  <SearchIcon fontSize="small" color="action" />
-                                </InputAdornment>
-                              ),
-                            }}
-                            sx={{ 
-                              '& .MuiOutlinedInput-root': {
-                                borderRadius: 1.5
-                              }
-                            }}
-                          />
-                        </FormControl>
+                        <TextField
+                          {...field}
+                          label="Product *"
+                          placeholder="Search product by name or SKU"
+                          variant="outlined"
+                          error={!!errors.product}
+                          helperText={errors.product?.message}
+                          fullWidth
+                          InputProps={{
+                            endAdornment: (
+                              <InputAdornment position="end">
+                                <SearchIcon fontSize="small" color="action" />
+                              </InputAdornment>
+                            ),
+                          }}
+                        />
                       )}
                     />
                   </Box>
 
                   {/* Location Field */}
                   <Box>
-                    <Typography variant="body2" fontWeight="500" color="text.secondary" mb={0.5}>
-                      Location <Box component="span" sx={{ color: 'error.main' }}>*</Box>
-                    </Typography>
                     <Controller
                       name="location"
                       control={control}
                       render={({ field }) => (
-                        <FormControl error={!!errors.location} fullWidth>
-                          <Select
-                            {...field}
-                            displayEmpty
-                            size="small"
-                            error={!!errors.location}
-                            sx={{ 
-                              borderRadius: 1.5
-                            }}
-                          >
-                            <MenuItem value="">Select location</MenuItem>
-                            <MenuItem value="wa">Warehouse A</MenuItem>
-                            <MenuItem value="wb">Warehouse B</MenuItem>
-                          </Select>
-                          {errors.location && (
-                            <FormHelperText error>{errors.location.message}</FormHelperText>
-                          )}
-                        </FormControl>
+                        <TextField
+                          {...field}
+                          select
+                          label="Location *"
+                          variant="outlined"
+                          error={!!errors.location}
+                          helperText={errors.location?.message}
+                          fullWidth
+                        >
+                          <MenuItem value="">Select location</MenuItem>
+                          <MenuItem value="wa">Warehouse A</MenuItem>
+                          <MenuItem value="wb">Warehouse B</MenuItem>
+                        </TextField>
                       )}
                     />
                   </Box>
@@ -323,46 +306,33 @@ export default function AddInventoryPage() {
                   {/* Serial/Lot Number and Expiry Date */}
                   <Grid container spacing={2}>
                     <Grid item xs={12} sm={6}>
-                      <Typography variant="body2" fontWeight="500" color="text.secondary" mb={0.5}>
-                        Serial/Lot Number
-                      </Typography>
                       <Controller
                         name="serialLotNumber"
                         control={control}
                         render={({ field }) => (
                           <TextField
                             {...field}
+                            label="Serial/Lot Number"
                             placeholder="Enter serial/lot number"
                             variant="outlined"
-                            size="small"
                             fullWidth
-                            sx={{ 
-                              '& .MuiOutlinedInput-root': {
-                                borderRadius: 1.5
-                              }
-                            }}
                           />
                         )}
                       />
                     </Grid>
                     <Grid item xs={12} sm={6}>
-                      <Typography variant="body2" fontWeight="500" color="text.secondary" mb={0.5}>
-                        Expiry Date
-                      </Typography>
                       <Controller
                         name="expiryDate"
                         control={control}
                         render={({ field }) => (
                           <TextField
                             {...field}
+                            label="Expiry Date"
                             type="date"
                             variant="outlined"
-                            size="small"
                             fullWidth
-                            sx={{ 
-                              '& .MuiOutlinedInput-root': {
-                                borderRadius: 1.5
-                              }
+                            InputLabelProps={{
+                              shrink: true,
                             }}
                           />
                         )}
@@ -372,136 +342,104 @@ export default function AddInventoryPage() {
 
                   {/* Adjustment Type */}
                   <Box>
-                    <Typography variant="body2" fontWeight="500" color="text.secondary" mb={0.5}>
-                      Adjustment Type <Box component="span" sx={{ color: 'error.main' }}>*</Box>
-                    </Typography>
                     <Controller
                       name="adjustmentType"
                       control={control}
                       render={({ field }) => (
-                        <FormControl error={!!errors.adjustmentType} fullWidth>
-                          <Select
-                            {...field}
-                            displayEmpty
-                            size="small"
-                            error={!!errors.adjustmentType}
-                            sx={{ 
-                              borderRadius: 1.5
-                            }}
-                          >
-                            <MenuItem value="">Select type</MenuItem>
-                            {isLoadingTypes ? (
-                              <MenuItem disabled>Loading...</MenuItem>
-                            ) : (
-                              adjustmentTypes.map((type) => (
-                                <MenuItem key={type.code} value={type.code}>
-                                  {type.name}
-                                </MenuItem>
-                              ))
-                            )}
-                          </Select>
-                          {errors.adjustmentType && (
-                            <FormHelperText error>{errors.adjustmentType.message}</FormHelperText>
+                        <TextField
+                          {...field}
+                          select
+                          label="Adjustment Type *"
+                          variant="outlined"
+                          error={!!errors.adjustmentType}
+                          helperText={errors.adjustmentType?.message}
+                          fullWidth
+                        >
+                          <MenuItem value="">Select type</MenuItem>
+                          {isLoadingTypes ? (
+                            <MenuItem disabled>Loading...</MenuItem>
+                          ) : (
+                            adjustmentTypes.map((type) => (
+                              <MenuItem key={type.code} value={type.code}>
+                                {type.name}
+                              </MenuItem>
+                            ))
                           )}
-                        </FormControl>
+                        </TextField>
                       )}
                     />
                   </Box>
 
                   {/* Quantity */}
                   <Box>
-                    <Typography variant="body2" fontWeight="500" color="text.secondary" mb={0.5}>
-                      Quantity <Box component="span" sx={{ color: 'error.main' }}>*</Box>
-                    </Typography>
                     <Controller
                       name="quantity"
                       control={control}
                       render={({ field }) => (
-                        <FormControl error={!!errors.quantity} fullWidth>
-                          <TextField
-                            {...field}
-                            placeholder="Enter quantity"
-                            variant="outlined"
-                            type="number"
-                            error={!!errors.quantity}
-                            helperText={errors.quantity?.message || "Enter a positive or negative number based on adjustment type"}
-                            size="small"
-                            sx={{ 
-                              '& .MuiOutlinedInput-root': {
-                                borderRadius: 1.5
-                              }
-                            }}
-                          />
-                        </FormControl>
+                        <TextField
+                          {...field}
+                          label="Quantity *"
+                          placeholder="Enter quantity"
+                          variant="outlined"
+                          type="number"
+                          error={!!errors.quantity}
+                          helperText={errors.quantity?.message || "Enter a positive or negative number based on adjustment type"}
+                          fullWidth
+                        />
                       )}
                     />
                   </Box>
 
                   {/* Notes */}
                   <Box>
-                    <Typography variant="body2" fontWeight="500" color="text.secondary" mb={0.5}>
-                      Notes
-                    </Typography>
                     <Controller
                       name="notes"
                       control={control}
                       render={({ field }) => (
                         <TextField
                           {...field}
+                          label="Additional Notes"
                           placeholder="Enter additional notes"
                           variant="outlined"
                           multiline
-                          rows={4}
+                          rows={3}
                           fullWidth
-                          sx={{ 
-                            '& .MuiOutlinedInput-root': {
-                              borderRadius: 1.5
-                            }
-                          }}
                         />
                       )}
                     />
                   </Box>
                 </Box>
               </Grid>
-
+              
               {/* Right Column */}
               <Grid item xs={12} md={6}>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 2, sm: 3 } }}>
                   {/* Reason */}
                   <Box>
-                    <Typography variant="body2" fontWeight="500" color="text.secondary" mb={0.5}>
-                      Reason <Box component="span" sx={{ color: 'error.main' }}>*</Box>
-                    </Typography>
                     <Controller
                       name="reason"
                       control={control}
                       render={({ field }) => (
-                        <FormControl error={!!errors.reason} fullWidth>
-                          <Select
-                            {...field}
-                            displayEmpty
-                            size="small"
-                            error={!!errors.reason}
-                            sx={{ 
-                              borderRadius: 1.5
-                            }}
-                          >
-                            <MenuItem value="">Select reason</MenuItem>
-                            {isLoadingReasons ? (
-                              <MenuItem disabled>Loading...</MenuItem>
-                            ) : (
-                              reasons.map((reason) => (
-                                <MenuItem key={reason.id} value={reason.id.toString()}>
-                                  {reason.name}
-                                </MenuItem>
-                              ))
-                            )}
-                          </Select>
-                          {errors.reason && (
-                            <FormHelperText error>{errors.reason.message}</FormHelperText>
+                        <TextField
+                          {...field}
+                          select
+                          label="Reason *"
+                          variant="outlined"
+                          error={!!errors.reason}
+                          helperText={errors.reason?.message}
+                          fullWidth
+                        >
+                          <MenuItem value="">Select reason</MenuItem>
+                          {isLoadingReasons ? (
+                            <MenuItem disabled>Loading...</MenuItem>
+                          ) : (
+                            reasons.map((reason) => (
+                              <MenuItem key={reason.id} value={reason.id.toString()}>
+                                {reason.name}
+                              </MenuItem>
+                            ))
                           )}
-                        </FormControl>
+                        </TextField>
                       )}
                     />
                   </Box>

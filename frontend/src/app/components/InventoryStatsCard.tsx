@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Paper, Typography } from '@mui/material';
 
-interface InventoryStatsCardProps {
+interface StatsCardProps {
   title: string;
   value: string;
   changeValue?: string;
@@ -9,7 +9,7 @@ interface InventoryStatsCardProps {
   sx?: any;
 }
 
-const InventoryStatsCard: React.FC<InventoryStatsCardProps> = ({ 
+const StatsCard: React.FC<StatsCardProps> = ({ 
   title, 
   value, 
   changeValue, 
@@ -72,4 +72,4 @@ const InventoryStatsCard: React.FC<InventoryStatsCardProps> = ({
   );
 };
 
-export default InventoryStatsCard;
+export default StatsCard;
