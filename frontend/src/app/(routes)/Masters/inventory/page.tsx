@@ -33,7 +33,8 @@ import {
   GridPaginationModel,
   GridToolbarContainer,
   GridToolbarExport,
-  GridToolbarQuickFilter
+  GridToolbarQuickFilter,
+  GridToolbarFilterButton
 } from '@mui/x-data-grid';
 import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
@@ -45,6 +46,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import FilterListIcon from '@mui/icons-material/FilterList';
 import { z } from 'zod';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -77,6 +79,7 @@ type InventoryItemFormData = z.infer<typeof inventoryItemSchema>;
 function CustomToolbar() {
   return (
     <GridToolbarContainer>
+      <GridToolbarFilterButton />
       <GridToolbarExport />
       <GridToolbarQuickFilter debounceMs={500} />
     </GridToolbarContainer>
@@ -705,13 +708,19 @@ export default function InventoryPage() {
       </Grid>
 
       {/* Search and filter section */}
-   
-      {/* Data grid */}
       <ContentCard
         title="Inventory Items"
         action={
-          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+            {/* Search and filter group */}
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center',
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 1,
+              p: 0.5
+            }}>
               <IconButton
                 size="small"
                 onClick={() => setShowSearch(!showSearch)}
@@ -725,99 +734,125 @@ export default function InventoryPage() {
                   placeholder="Search"
                   value={searchTerm}
                   onChange={handleSearchChange}
-                  sx={{ ml: 1, width: 200 }}
+                  variant="standard"
+                  InputProps={{
+                    disableUnderline: true
+                  }}
+                  sx={{ ml: 1, width: 150 }}
                 />
               )}
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <IconButton
-                  size="small"
-                  onClick={() => handleViewChange('list')}
-                  sx={{ 
-                    color: view === 'list' ? 'primary.main' : 'text.secondary',
-                    bgcolor: view === 'list' ? 'action.hover' : 'transparent'
-                  }}
-                >
-                  <ViewListIcon fontSize="small" />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  onClick={() => handleViewChange('grid')}
-                  sx={{ 
-                    color: view === 'grid' ? 'primary.main' : 'text.secondary',
-                    bgcolor: view === 'grid' ? 'action.hover' : 'transparent'
-                  }}
-                >
-                  <GridViewIcon fontSize="small" />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  onClick={handleDateFilterOpen}
-                  sx={{ color: 'text.secondary', ml: 1 }}
-                >
-                  <CalendarTodayIcon fontSize="small" />
-                </IconButton>
-                <Typography variant="body2" sx={{ ml: 0.5 }}>
-                  {dateRangeText}
-                </Typography>
-                
-                <Popover
-                  open={dateFilterOpen}
-                  anchorEl={dateAnchorEl}
-                  onClose={handleDateFilterClose}
-                  anchorOrigin={{
-                    vertical: 'bottom',
-                    horizontal: 'left',
-                  }}
-                  transformOrigin={{
-                    vertical: 'top',
-                    horizontal: 'left',
-                  }}
-                >
-                  <Box sx={{ p: 2, width: 200 }}>
-                    <Typography variant="subtitle2" sx={{ mb: 1 }}>Date Range</Typography>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      {['This Week', 'Last Week', 'This Month', 'Last Month', 'Custom Range'].map((option) => (
-                        <MenuItem 
-                          key={option} 
-                          value={option}
-                          selected={dateFilter === option}
-                          onClick={() => handleDateFilterChange({ target: { value: option } } as any)}
-                        >
-                          {option}
-                        </MenuItem>
-                      ))}
-                    </Box>
-                    
-                    {dateFilter === 'Custom Range' && (
-                      <Box sx={{ mt: 2 }}>
-                        <Typography variant="caption" sx={{ mb: 1 }}>Start Date</Typography>
-                        <TextField
-                          fullWidth
-                          size="small"
-                          type="date"
-                          value={startDate ? startDate.toISOString().split('T')[0] : ''}
-                          onChange={(e) => {
-                            const date = e.target.value ? new Date(e.target.value) : null;
-                            handleCustomDateChange(date, endDate);
-                          }}
-                          sx={{ mb: 1 }}
-                        />
-                        <Typography variant="caption" sx={{ mb: 1 }}>End Date</Typography>
-                        <TextField
-                          fullWidth
-                          size="small"
-                          type="date"
-                          value={endDate ? endDate.toISOString().split('T')[0] : ''}
-                          onChange={(e) => {
-                            const date = e.target.value ? new Date(e.target.value) : null;
-                            handleCustomDateChange(startDate, date);
-                          }}
-                        />
-                      </Box>
-                    )}
+              <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+              <IconButton
+                size="small"
+                onClick={() => {
+                  const filterButton = document.querySelector('.MuiDataGrid-toolbarFilterButton');
+                  if (filterButton) {
+                    (filterButton as HTMLElement).click();
+                  }
+                }}
+                sx={{ color: 'text.secondary' }}
+              >
+                <FilterListIcon fontSize="small" />
+              </IconButton>
+            </Box>
+            
+            <Divider orientation="vertical" flexItem />
+            
+            {/* View mode group */}
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <IconButton
+                size="small"
+                onClick={() => handleViewChange('list')}
+                sx={{ 
+                  color: view === 'list' ? 'primary.main' : 'text.secondary',
+                  bgcolor: view === 'list' ? 'action.hover' : 'transparent'
+                }}
+              >
+                <ViewListIcon fontSize="small" />
+              </IconButton>
+              <IconButton
+                size="small"
+                onClick={() => handleViewChange('grid')}
+                sx={{ 
+                  color: view === 'grid' ? 'primary.main' : 'text.secondary',
+                  bgcolor: view === 'grid' ? 'action.hover' : 'transparent'
+                }}
+              >
+                <GridViewIcon fontSize="small" />
+              </IconButton>
+            </Box>
+            
+            <Divider orientation="vertical" flexItem />
+            
+            {/* Date filter group */}
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <IconButton
+                size="small"
+                onClick={handleDateFilterOpen}
+                sx={{ color: 'text.secondary' }}
+              >
+                <CalendarTodayIcon fontSize="small" />
+              </IconButton>
+              <Typography variant="body2" sx={{ ml: 0.5 }}>
+                {dateRangeText}
+              </Typography>
+              <Popover
+                open={dateFilterOpen}
+                anchorEl={dateAnchorEl}
+                onClose={handleDateFilterClose}
+                anchorOrigin={{
+                  vertical: 'bottom',
+                  horizontal: 'left',
+                }}
+                transformOrigin={{
+                  vertical: 'top',
+                  horizontal: 'left',
+                }}
+              >
+                <Box sx={{ p: 2, width: 200 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>Date Range</Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {['This Week', 'Last Week', 'This Month', 'Last Month', 'Custom Range'].map((option) => (
+                      <MenuItem 
+                        key={option} 
+                        value={option}
+                        selected={dateFilter === option}
+                        onClick={() => handleDateFilterChange({ target: { value: option } } as any)}
+                      >
+                        {option}
+                      </MenuItem>
+                    ))}
                   </Box>
-                </Popover>
-              </Box>
+                  
+                  {dateFilter === 'Custom Range' && (
+                    <Box sx={{ mt: 2 }}>
+                      <Typography variant="caption" sx={{ mb: 1 }}>Start Date</Typography>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        type="date"
+                        value={startDate ? startDate.toISOString().split('T')[0] : ''}
+                        onChange={(e) => {
+                          const date = e.target.value ? new Date(e.target.value) : null;
+                          handleCustomDateChange(date, endDate);
+                        }}
+                        sx={{ mb: 1 }}
+                      />
+                      <Typography variant="caption" sx={{ mb: 1 }}>End Date</Typography>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        type="date"
+                        value={endDate ? endDate.toISOString().split('T')[0] : ''}
+                        onChange={(e) => {
+                          const date = e.target.value ? new Date(e.target.value) : null;
+                          handleCustomDateChange(startDate, date);
+                        }}
+                      />
+                    </Box>
+                  )}
+                </Box>
+              </Popover>
             </Box>
           </Box>
         }
