@@ -31,16 +31,15 @@ import {
   Divider,
   Switch,
   FormControlLabel,
-  Tooltip
+  Tooltip,
+  Checkbox
 } from '@mui/material';
 import { 
   DataGrid, 
   GridColDef, 
   GridRenderCellParams,
-  GridToolbarContainer,
-  GridToolbarFilterButton,
-  GridToolbarExport,
-  GridToolbarQuickFilter
+  GridRowId,
+  GridRowSelectionModel
 } from '@mui/x-data-grid';
 import SearchIcon from '@mui/icons-material/Search';
 import FilterListIcon from '@mui/icons-material/FilterList';
@@ -50,18 +49,18 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import CloseIcon from '@mui/icons-material/Close';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
 
 // Define Zod schema for inventory item validation
 const inventoryItemSchema = z.object({
-  customer: z.string().min(1, 'Customer name is required'),
-  invoice: z.string().min(1, 'Invoice number is required'),
-  status: z.enum(['Open Invoice', 'Paid', 'Pending', 'Overdue'], {
+  product: z.string().min(1, 'Product name is required'),
+  sku: z.string().min(1, 'SKU is required'),
+  location: z.string().min(1, 'Location is required'),
+  availableQuantity: z.string().min(1, 'Available quantity is required'),
+  status: z.enum(['Active', 'Inactive', 'Low Stock'], {
     errorMap: () => ({ message: 'Please select a valid status' }),
   }),
-  amount: z.string().min(1, 'Amount is required'),
-  issueDate: z.string().min(1, 'Issue date is required'),
-  dueDate: z.string().min(1, 'Due date is required'),
-  // Lot management fields
   lotTracked: z.boolean().optional(),
   lotNumber: z.string().optional(),
   expiryDate: z.string().optional(),
@@ -99,13 +98,11 @@ const sanitizeNumber = (value: any): number => {
 // Define inventory item type
 interface InventoryItem {
   id: number;
-  customer: string;
-  invoice: string;
+  product: string;
+  sku: string;
+  location: string;
+  availableQuantity: number;
   status: string;
-  amount: string;
-  issueDate: string;
-  created: string;
-  dueDate: string;
   lotTracked?: boolean;
   lotNumber?: string;
   expiryDate?: string;
@@ -117,70 +114,60 @@ interface InventoryItem {
 const mockInventoryItems: InventoryItem[] = [
   {
     id: 1,
-    customer: sanitizeString('DEVOTEAM'),
-    invoice: sanitizeString('F-010223-68'),
-    status: sanitizeString('Open Invoice'),
-    amount: sanitizeString('$8,76.39'),
-    issueDate: sanitizeString('17 Jan 2025'),
-    created: sanitizeString('17 Jan 2025, Wed 1:20pm'),
-    dueDate: sanitizeString('03 Mar 2025'),
+    product: sanitizeString('Vitamin D3 Supplement'),
+    sku: sanitizeString('VD3-1000IU'),
+    location: sanitizeString('Warehouse A'),
+    availableQuantity: 75,
+    status: sanitizeString('Active'),
     lotTracked: true,
     lotNumber: 'LOT-2025-001',
     expiryDate: '2026-03-17',
     lotStrategy: 'FIFO',
-    costPricePerUnit: '$7.50'
+    costPricePerUnit: '$7.99'
   },
   {
     id: 2,
-    customer: sanitizeString('ACME CORP'),
-    invoice: sanitizeString('F-010224-12'),
-    status: sanitizeString('Paid'),
-    amount: sanitizeString('$1,234.56'),
-    issueDate: sanitizeString('20 Jan 2025'),
-    created: sanitizeString('20 Jan 2025, Mon 9:45am'),
-    dueDate: sanitizeString('20 Mar 2025'),
+    product: sanitizeString('Calcium Magnesium Zinc'),
+    sku: sanitizeString('CMZ-500MG'),
+    location: sanitizeString('Store Front'),
+    availableQuantity: 120,
+    status: sanitizeString('Active'),
     lotTracked: false
   },
   {
     id: 3,
-    customer: sanitizeString('GLOBEX'),
-    invoice: sanitizeString('F-010225-33'),
-    status: sanitizeString('Pending'),
-    amount: sanitizeString('$567.89'),
-    issueDate: sanitizeString('22 Jan 2025'),
-    created: sanitizeString('22 Jan 2025, Wed 2:30pm'),
-    dueDate: sanitizeString('22 Mar 2025'),
+    product: sanitizeString('Omega-3 Fish Oil'),
+    sku: sanitizeString('OMG-1000MG'),
+    location: sanitizeString('Warehouse B'),
+    availableQuantity: 15,
+    status: sanitizeString('Low Stock'),
     lotTracked: true,
     lotNumber: 'LOT-2025-002',
     expiryDate: '2026-01-22',
     lotStrategy: 'FEFO',
-    costPricePerUnit: '$4.25'
+    costPricePerUnit: '$12.50'
   },
   {
     id: 4,
-    customer: sanitizeString('INITECH'),
-    invoice: sanitizeString('F-010226-45'),
-    status: sanitizeString('Overdue'),
-    amount: sanitizeString('$890.12'),
-    issueDate: sanitizeString('25 Jan 2025'),
-    created: sanitizeString('25 Jan 2025, Sat 11:15am'),
-    dueDate: sanitizeString('25 Feb 2025'),
+    product: sanitizeString('Multivitamin Daily'),
+    sku: sanitizeString('MVD-100CT'),
+    location: sanitizeString('Store Front'),
+    availableQuantity: 0,
+    status: sanitizeString('Inactive'),
     lotTracked: false
   },
   {
     id: 5,
-    customer: sanitizeString('UMBRELLA'),
-    invoice: sanitizeString('F-010227-78'),
-    status: sanitizeString('Open Invoice'),
-    amount: sanitizeString('$345.67'),
-    issueDate: sanitizeString('28 Jan 2025'),
-    created: sanitizeString('28 Jan 2025, Tue 4:20pm'),
-    dueDate: sanitizeString('28 Mar 2025'),
+    product: sanitizeString('Protein Powder Vanilla'),
+    sku: sanitizeString('PPV-2LB'),
+    location: sanitizeString('Warehouse A'),
+    availableQuantity: 42,
+    status: sanitizeString('Active'),
     lotTracked: true,
     lotNumber: 'LOT-2025-003',
     expiryDate: '2026-06-28',
     lotStrategy: 'FIFO',
-    costPricePerUnit: '$3.10'
+    costPricePerUnit: '$29.99'
   }
 ];
 
@@ -188,287 +175,395 @@ export default function InventoryPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
-  const [pageSize, setPageSize] = useState(5);
+  const [paginationModel, setPaginationModel] = useState({
+    pageSize: 5,
+    page: 0
+  });
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>(mockInventoryItems);
   const [filteredItems, setFilteredItems] = useState<InventoryItem[]>(mockInventoryItems);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
   const [lotExpiryDateStr, setLotExpiryDateStr] = useState<string>('');
+  const [selectionModel, setSelectionModel] = useState<GridRowId[]>([]);
 
   // Initialize react-hook-form with zod resolver
-  const {
-    control,
-    handleSubmit,
-    reset,
-    watch,
-    formState: { errors, isSubmitting }
+  const { 
+    control, 
+    handleSubmit, 
+    reset, 
+    watch, 
+    formState: { errors, isSubmitting } 
   } = useForm<InventoryItemFormData>({
     resolver: zodResolver(inventoryItemSchema),
     defaultValues: {
-      customer: '',
-      invoice: '',
-      status: 'Open Invoice',
-      amount: '',
-      issueDate: '',
-      dueDate: '',
+      product: '',
+      sku: '',
+      location: '',
+      availableQuantity: '',
+      status: 'Active',
       lotTracked: false,
       lotNumber: '',
       expiryDate: '',
       lotStrategy: 'FIFO',
-      costPricePerUnit: ''
+      costPricePerUnit: '',
     }
   });
 
   // Watch the lotTracked field to conditionally show lot management fields
-  const isLotTracked = watch('lotTracked');
+  const lotTracked = watch('lotTracked');
 
+  // Filter items based on search term
+  useEffect(() => {
+    const filtered = inventoryItems.filter(item => {
+      const matchesSearch = 
+        item.product.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.location.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      // Add date filtering logic here if needed
+      
+      return matchesSearch;
+    });
+    
+    setFilteredItems(filtered);
+  }, [searchTerm, inventoryItems, startDate, endDate]);
+
+  // Handle search input change
   const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(event.target.value);
   };
 
-  // Apply filters whenever search term or dates change
-  useEffect(() => {
-    applyFilters();
-  }, [searchTerm, startDate, endDate, inventoryItems]);
-
-  // Function to apply all filters
-  const applyFilters = () => {
-    let filtered = [...inventoryItems];
-    
-    // Apply search filter
-    if (searchTerm.trim() !== '') {
-      const searchLower = searchTerm.toLowerCase();
-      filtered = filtered.filter(item => 
-        item.customer.toLowerCase().includes(searchLower) ||
-        item.invoice.toLowerCase().includes(searchLower) ||
-        item.status.toLowerCase().includes(searchLower) ||
-        item.amount.toLowerCase().includes(searchLower)
-      );
-    }
-    
-    // Apply date range filter
-    if (startDate || endDate) {
-      filtered = filtered.filter(item => {
-        const itemDate = new Date(item.issueDate);
-        
-        // Extract just the date part for comparison
-        const itemDateOnly = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
-        
-        if (startDate && endDate) {
-          const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-          const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
-          return itemDateOnly >= startDateOnly && itemDateOnly <= endDateOnly;
-        } else if (startDate) {
-          const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-          return itemDateOnly >= startDateOnly;
-        } else if (endDate) {
-          const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
-          return itemDateOnly <= endDateOnly;
-        }
-        
-        return true;
-      });
-    }
-    
-    setFilteredItems(filtered);
+  // Handle date range change
+  const handleDateRangeChange = (start: Date | null, end: Date | null) => {
+    setStartDate(start);
+    setEndDate(end);
   };
 
+  // Open form dialog
   const handleOpenForm = (itemId?: number) => {
     if (itemId) {
-      // Edit mode - find the item and set form values
+      // Edit existing item
+      setEditingItemId(itemId);
       const itemToEdit = inventoryItems.find(item => item.id === itemId);
+      
       if (itemToEdit) {
-        reset({
-          customer: itemToEdit.customer,
-          invoice: itemToEdit.invoice,
-          status: itemToEdit.status as any,
-          amount: itemToEdit.amount,
-          issueDate: itemToEdit.issueDate,
-          dueDate: itemToEdit.dueDate,
-          lotTracked: itemToEdit.lotTracked || false,
-          lotNumber: itemToEdit.lotNumber || '',
-          expiryDate: itemToEdit.expiryDate || '',
-          lotStrategy: itemToEdit.lotStrategy || 'FIFO',
-          costPricePerUnit: itemToEdit.costPricePerUnit || ''
-        });
-        
-        // Set expiry date for the date input
+        // Set expiry date string for the date picker
         if (itemToEdit.expiryDate) {
           setLotExpiryDateStr(itemToEdit.expiryDate);
         } else {
           setLotExpiryDateStr('');
         }
         
-        setEditingItemId(itemId);
+        // Reset form with existing item data
+        reset({
+          product: itemToEdit.product,
+          sku: itemToEdit.sku,
+          location: itemToEdit.location,
+          availableQuantity: itemToEdit.availableQuantity.toString(),
+          status: itemToEdit.status as 'Active' | 'Inactive' | 'Low Stock',
+          lotTracked: itemToEdit.lotTracked || false,
+          lotNumber: itemToEdit.lotNumber || '',
+          expiryDate: itemToEdit.expiryDate || '',
+          lotStrategy: itemToEdit.lotStrategy || 'FIFO',
+          costPricePerUnit: itemToEdit.costPricePerUnit || '',
+        });
       }
     } else {
-      // Add mode - reset form to defaults
+      // Add new item
+      setEditingItemId(null);
+      setLotExpiryDateStr('');
+      
+      // Reset form with default values
       reset({
-        customer: '',
-        invoice: '',
-        status: 'Open Invoice',
-        amount: '',
-        issueDate: '',
-        dueDate: '',
+        product: '',
+        sku: '',
+        location: '',
+        availableQuantity: '',
+        status: 'Active',
         lotTracked: false,
         lotNumber: '',
         expiryDate: '',
         lotStrategy: 'FIFO',
-        costPricePerUnit: ''
+        costPricePerUnit: '',
       });
-      setLotExpiryDateStr('');
-      setEditingItemId(null);
     }
+    
     setIsFormOpen(true);
   };
 
+  // Close form dialog
   const handleCloseForm = () => {
     setIsFormOpen(false);
   };
 
+  // Handle form submission
   const onSubmit = (data: InventoryItemFormData) => {
     // Sanitize all input data
     const sanitizedData = {
-      customer: sanitizeString(data.customer),
-      invoice: sanitizeString(data.invoice),
+      product: sanitizeString(data.product),
+      sku: sanitizeString(data.sku),
+      location: sanitizeString(data.location),
+      availableQuantity: sanitizeNumber(data.availableQuantity),
       status: sanitizeString(data.status),
-      amount: sanitizeString(data.amount),
-      issueDate: sanitizeString(data.issueDate),
-      dueDate: sanitizeString(data.dueDate),
-      lotTracked: data.lotTracked || false,
+      lotTracked: !!data.lotTracked,
       lotNumber: data.lotTracked ? sanitizeString(data.lotNumber || '') : undefined,
       expiryDate: data.lotTracked ? sanitizeString(data.expiryDate || '') : undefined,
       lotStrategy: data.lotTracked ? data.lotStrategy : undefined,
-      costPricePerUnit: data.lotTracked ? sanitizeString(data.costPricePerUnit || '') : undefined
+      costPricePerUnit: data.lotTracked ? sanitizeString(data.costPricePerUnit || '') : undefined,
     };
-
+    
     if (editingItemId) {
       // Update existing item
       setInventoryItems(prevItems => 
         prevItems.map(item => 
           item.id === editingItemId 
-            ? { 
-                ...item, 
-                ...sanitizedData
-              } 
+            ? { ...item, ...sanitizedData } 
             : item
         )
       );
     } else {
-      // Add new item
-      const newItem: InventoryItem = {
-        id: Math.max(0, ...inventoryItems.map(item => item.id)) + 1,
-        ...sanitizedData,
-        created: new Date().toLocaleString('en-US', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-          weekday: 'short',
-          hour: 'numeric',
-          minute: '2-digit',
-          hour12: true
-        })
-      };
-      setInventoryItems(prevItems => [...prevItems, newItem]);
+      // Add new item with a new ID
+      const newId = Math.max(0, ...inventoryItems.map(item => item.id)) + 1;
+      setInventoryItems(prevItems => [
+        ...prevItems,
+        {
+          id: newId,
+          ...sanitizedData
+        }
+      ]);
     }
-
-    // Close form after submission
+    
+    // Close the form dialog
     handleCloseForm();
   };
 
   // Define columns for the DataGrid
   const columns: GridColDef[] = useMemo(() => [
     { 
-      field: 'customer', 
-      headerName: 'CUSTOMER', 
-      flex: 1
-    },
-    { 
-      field: 'invoice', 
-      headerName: 'INVOICE', 
-      flex: 1
-    },
-    { 
-      field: 'status', 
-      headerName: 'STATUS', 
-      flex: 1,
+      field: 'selection',
+      headerName: '',
+      width: 50,
+      sortable: false,
+      filterable: false,
+      disableColumnMenu: true,
+      renderHeader: () => (
+        <Checkbox
+          indeterminate={selectionModel.length > 0 && selectionModel.length < filteredItems.length}
+          checked={selectionModel.length > 0 && selectionModel.length === filteredItems.length}
+          onChange={(event) => {
+            const newSelectionModel = event.target.checked 
+              ? filteredItems.map(item => item.id) 
+              : [];
+            setSelectionModel(newSelectionModel);
+          }}
+        />
+      ),
       renderCell: (params) => {
-        const status = params.value as string;
-        let color = 'primary';
-        
-        if (status === 'Paid') color = 'success';
-        if (status === 'Overdue') color = 'error';
-        if (status === 'Pending') color = 'warning';
-        
+        const isSelected = selectionModel.includes(params.row.id);
         return (
-          <Chip 
-            label={status} 
-            size="small" 
-            color={color as any} 
-            variant="outlined" 
+          <Checkbox
+            checked={isSelected}
+            onChange={() => {
+              const id = params.row.id;
+              const newSelectionModel = [...selectionModel];
+              
+              if (!isSelected) {
+                if (!newSelectionModel.includes(id)) {
+                  newSelectionModel.push(id);
+                }
+              } else {
+                const index = newSelectionModel.indexOf(id);
+                if (index > -1) {
+                  newSelectionModel.splice(index, 1);
+                }
+              }
+              
+              setSelectionModel(newSelectionModel);
+            }}
           />
         );
       }
     },
     { 
-      field: 'amount', 
-      headerName: 'AMOUNT', 
-      flex: 1
+      field: 'product', 
+      headerName: 'Product', 
+      flex: 2,
+      minWidth: 250,
+      align: 'left',
+      headerAlign: 'left',
+      renderCell: (params) => {
+        const product = params.row.product;
+        
+        return (
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center',
+            gap: 2,
+            width: '100%',
+            height: '100%',
+            pl: 1
+          }}>
+            <Box 
+              component="img"
+              src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT0Nss1BY7Ntq2mHZyaaPs3yWzseQ78Ou3OFg&s"
+              alt="Refresh"
+              sx={{ 
+                width: 24, 
+                height: 24, 
+                objectFit: 'contain'
+              }}
+            />
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              {product}
+            </Typography>
+          </Box>
+        );
+      }
     },
     { 
-      field: 'issueDate', 
-      headerName: 'ISSUE DATE', 
-      flex: 1
-    },
-    { 
-      field: 'created', 
-      headerName: 'CREATED', 
-      flex: 1.5
-    },
-    { 
-      field: 'dueDate', 
-      headerName: 'DUE DATE', 
-      flex: 1
-    },
-    {
-      field: 'lotTracked',
-      headerName: 'LOT TRACKED',
-      flex: 0.8,
+      field: 'location', 
+      headerName: 'Location', 
+      flex: 1,
+      minWidth: 120,
+      align: 'center',
+      headerAlign: 'center',
       renderCell: (params) => (
-        <Chip 
-          label={params.value ? 'Yes' : 'No'} 
-          size="small"
-          color={params.value ? 'success' : 'default'}
-          variant="outlined"
-        />
+        <Box sx={{ 
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <Typography variant="body2">
+            {params.value}
+          </Typography>
+        </Box>
       )
     },
     { 
+      field: 'availableQuantity', 
+      headerName: 'Available Qty', 
+      flex: 1,
+      minWidth: 120,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: (params) => {
+        const availableQty = params.value as number;
+        
+        let textColor = '#00a854'; // Green for normal
+        if (availableQty <= 0) textColor = '#f44336'; // Red for zero
+        else if (availableQty < 20) textColor = '#ffab00'; // Amber for low
+        
+        return (
+          <Box sx={{ 
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <Typography variant="body2" sx={{ color: textColor, fontWeight: 500 }}>
+              {availableQty}
+            </Typography>
+          </Box>
+        );
+      }
+    },
+    { 
+      field: 'status', 
+      headerName: 'Status', 
+      flex: 1,
+      minWidth: 120,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: (params) => {
+        const status = params.value as string;
+        let textColor = '#00a854'; // Green text for Active
+        
+        if (status === 'Inactive') {
+          textColor = '#f44336'; // Red text
+        } else if (status === 'Low Stock') {
+          textColor = '#ffab00'; // Amber text
+        }
+        
+        return (
+          <Box sx={{ 
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <Typography variant="body2" sx={{ color: textColor, fontWeight: 500 }}>
+              {status}
+            </Typography>
+          </Box>
+        );
+      }
+    },
+    { 
       field: 'actions', 
-      headerName: 'ACTIONS', 
+      headerName: 'Actions', 
       flex: 0.5,
+      minWidth: 100,
       sortable: false,
       filterable: false,
+      align: 'center',
+      headerAlign: 'center',
       renderCell: (params) => (
-        <IconButton 
-          size="small" 
-          onClick={() => handleOpenForm(params.row.id)}
-        >
-          <MoreVertIcon />
-        </IconButton>
+        <Box sx={{ 
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <IconButton 
+              size="small" 
+              onClick={() => handleOpenForm(params.row.id)}
+              sx={{ color: '#5f5fc4' }}
+            >
+              <EditIcon fontSize="small" />
+            </IconButton>
+            <IconButton 
+              size="small"
+              sx={{ color: 'text.secondary' }}
+            >
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Box>
+        </Box>
       )
     }
   ], []);
 
+  useEffect(() => {
+    const handleRowSelectionChange = (newSelectionModel: GridRowId[]) => {
+      setSelectionModel(newSelectionModel);
+    };
+
+    return () => {
+      handleRowSelectionChange([]);
+    };
+  }, []);
+
   return (
-    <div className="space-y-4">
-      <PageTitle 
-        titleKey="pages.masters.inventory.title" 
-        descriptionKey="pages.masters.inventory.description"
-      />
-      
-      {/* Header section with title and buttons */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+    <Box sx={{ 
+      // bgcolor: '#f9fafb', 
+      // minHeight: 'calc(100vh - 73px)',
+      // p: { xs: 2, sm: 3 }
+    }}>
+      {/* Page Header */}
+      <Box sx={{ 
+        display: 'flex', 
+        flexDirection: { xs: 'column', sm: 'row' },
+        justifyContent: 'space-between', 
+        alignItems: { xs: 'flex-start', sm: 'center' }, 
+        gap: { xs: 2, sm: 0 },
+        mb: 3 
+      }}>
         <Box>
           <Typography variant="h5" component="h1" sx={{ fontWeight: 'bold', mb: 0.5 }}>
             Inventory Management
@@ -477,11 +572,15 @@ export default function InventoryPage() {
             Add or adjust inventory items
           </Typography>
         </Box>
-        <Box>
+        <Box sx={{ 
+          display: 'flex', 
+          gap: 2,
+          width: { xs: '100%', sm: 'auto' }
+        }}>
           <Button 
             variant="outlined" 
             startIcon={<FileDownloadIcon />} 
-            sx={{ mr: 1 }}
+            sx={{ flex: { xs: 1, sm: 'none' } }}
           >
             Export
           </Button>
@@ -490,83 +589,125 @@ export default function InventoryPage() {
             startIcon={<AddIcon />}
             component={Link}
             href="/Masters/inventory/add"
+            sx={{ 
+              flex: { xs: 1, sm: 'none' },
+              bgcolor: '#003366',
+              '&:hover': {
+                bgcolor: '#002244'
+              }
+            }}
           >
             New Item
           </Button>
         </Box>
       </Box>
 
-      {/* Stats cards */}
-      <Grid container spacing={2}>
+      {/* Stats Overview */}
+      <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                Total Items
-              </Typography>
-              <Typography variant="h4" component="div" sx={{ fontWeight: 'bold' }}>
-                {inventoryItems.length}
-              </Typography>
-              <Typography variant="body2" color="success.main">
-                ↑ 20.8%
-              </Typography>
-            </CardContent>
-          </Card>
+          <Paper elevation={0} sx={{ p: 3, borderRadius: 3 }}>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              Total Items
+            </Typography>
+            <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', mb: 1 }}>
+              466.2k
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', color: 'success.main' }}>
+              <Box component="span" sx={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                mr: 0.5,
+                fontSize: '0.875rem'
+              }}>
+                ↑ 20.6%
+              </Box>
+            </Box>
+          </Paper>
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                Draft
-              </Typography>
-              <Typography variant="h4" component="div" sx={{ fontWeight: 'bold' }}>
-                {inventoryItems.filter(item => item.status === 'Pending').length}
-              </Typography>
-              <Typography variant="body2" color="error.main">
+          <Paper elevation={0} sx={{ p: 3, borderRadius: 3 }}>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              Draft
+            </Typography>
+            <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', mb: 1 }}>
+              500
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', color: 'error.main' }}>
+              <Box component="span" sx={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                mr: 0.5,
+                fontSize: '0.875rem'
+              }}>
                 ↓ 5.5%
-              </Typography>
-            </CardContent>
-          </Card>
+              </Box>
+            </Box>
+          </Paper>
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                In Transit
-              </Typography>
-              <Typography variant="h4" component="div" sx={{ fontWeight: 'bold' }}>
-                {inventoryItems.filter(item => item.status === 'Open Invoice').length}
-              </Typography>
-              <Typography variant="body2" color="success.main">
+          <Paper elevation={0} sx={{ p: 3, borderRadius: 3 }}>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              In Transit
+            </Typography>
+            <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', mb: 1 }}>
+              134.4k
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', color: 'success.main' }}>
+              <Box component="span" sx={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                mr: 0.5,
+                fontSize: '0.875rem'
+              }}>
                 ↑ 20.9%
-              </Typography>
-            </CardContent>
-          </Card>
+              </Box>
+            </Box>
+          </Paper>
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                Low Stock
-              </Typography>
-              <Typography variant="h4" component="div" sx={{ fontWeight: 'bold' }}>
-                {inventoryItems.filter(item => item.status === 'Overdue').length}
-              </Typography>
-              <Typography variant="body2" color="success.main">
+          <Paper elevation={0} sx={{ p: 3, borderRadius: 3 }}>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              Low Stock
+            </Typography>
+            <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', mb: 1 }}>
+              800
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', color: 'success.main' }}>
+              <Box component="span" sx={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                mr: 0.5,
+                fontSize: '0.875rem'
+              }}>
                 ↑ 60.2%
-              </Typography>
-            </CardContent>
-          </Card>
+              </Box>
+            </Box>
+          </Paper>
         </Grid>
       </Grid>
 
-      {/* Filters section */}
-      <Paper sx={{ p: 2, mb: 2 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {/* Search and filter section */}
+      <Paper 
+        elevation={0}
+        sx={{ 
+          p: 3, 
+          mb: 3, 
+          borderRadius: 3,
+          display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
+          justifyContent: 'space-between',
+          alignItems: { xs: 'flex-start', sm: 'center' },
+          gap: 2
+        }}
+      >
+        <Box sx={{ 
+          display: 'flex', 
+          flexDirection: { xs: 'column', sm: 'row' },
+          gap: 2,
+          width: { xs: '100%', sm: 'auto' }
+        }}>
           <TextField
             placeholder="Search inventory..."
-            variant="outlined"
-            size="small"
             value={searchTerm}
             onChange={handleSearchChange}
             InputProps={{
@@ -574,316 +715,396 @@ export default function InventoryPage() {
                 <InputAdornment position="start">
                   <SearchIcon />
                 </InputAdornment>
-              ),
+              )
             }}
-            sx={{ width: '300px' }}
+            variant="outlined"
+            size="small"
+            sx={{ 
+              flex: { xs: '1', sm: '1 1 300px' },
+              maxWidth: { sm: '300px' }
+            }}
           />
-          <Box sx={{ display: 'flex', gap: 2 }}>
-            <DateRangePicker
-              startDate={startDate}
-              endDate={endDate}
-              onStartDateChange={setStartDate}
-              onEndDateChange={setEndDate}
-              label="Filter by date"
-              size="small"
-              maxDate={new Date()} // Limit to today
-              onFilterChange={applyFilters}
-            />
-            <Button 
-              variant="outlined" 
-              startIcon={<FilterListIcon />}
-            >
-              More Filters
-            </Button>
-          </Box>
+          
+          <TextField
+            placeholder="01/01/2025 - 12/31/2025"
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <CalendarTodayIcon />
+                </InputAdornment>
+              )
+            }}
+            variant="outlined"
+            size="small"
+            sx={{ 
+              flex: { xs: '1', sm: '1 1 300px' },
+              maxWidth: { sm: '300px' }
+            }}
+          />
         </Box>
+        
+        <Button 
+          variant="outlined" 
+          startIcon={<FilterListIcon />}
+          sx={{ color: 'text.secondary', borderColor: 'divider' }}
+        >
+          More Filters
+        </Button>
       </Paper>
 
-      {/* Inventory data grid */}
-      <Paper sx={{ height: 400, width: '100%' }}>
+      {/* Data grid */}
+      <Paper 
+        elevation={0}
+        sx={{ 
+          borderRadius: 3,
+          overflow: 'hidden',
+          '& .MuiDataGrid-root': {
+            border: 'none',
+          },
+          '& .MuiDataGrid-cell': {
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            padding: '0px',
+          },
+          '& .MuiDataGrid-columnHeaders': {
+            backgroundColor: '#f9fafb',
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+          },
+          '& .MuiDataGrid-virtualScroller': {
+            backgroundColor: '#fff',
+          },
+          '& .MuiDataGrid-columnHeaderCheckbox': {
+            '& .MuiDataGrid-columnHeaderTitleContainer': {
+              display: 'none'
+            }
+          }
+        }}
+      >
         <DataGrid
           rows={filteredItems}
           columns={columns}
-          initialState={{
-            pagination: {
-              paginationModel: { pageSize },
-            },
-          }}
-          pageSizeOptions={[5, 10, 25]}
-          onPaginationModelChange={(model) => setPageSize(model.pageSize)}
-          checkboxSelection
+          paginationModel={paginationModel}
+          onPaginationModelChange={setPaginationModel}
+          pageSizeOptions={[5, 10, 20]}
           disableRowSelectionOnClick
-          slots={{ toolbar: CustomToolbar }}
+          autoHeight
+          checkboxSelection={false}
+          rowSelectionModel={selectionModel}
+          onRowSelectionModelChange={(newSelectionModel: GridRowSelectionModel) => {
+            // Convert readonly array to mutable array
+            setSelectionModel([...newSelectionModel]);
+          }}
+          slots={{
+            pagination: () => (
+              <Box sx={{ 
+                p: 2, 
+                display: 'flex', 
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Button 
+                    variant="outlined" 
+                    size="small" 
+                    sx={{ borderRadius: 1 }}
+                    disabled={paginationModel.page === 0}
+                    onClick={() => setPaginationModel({
+                      ...paginationModel,
+                      page: Math.max(0, paginationModel.page - 1)
+                    })}
+                  >
+                    Previous
+                  </Button>
+                  <Typography variant="body2" color="text.secondary">
+                    Page {paginationModel.page + 1} of {Math.ceil(filteredItems.length / paginationModel.pageSize)}
+                  </Typography>
+                </Box>
+                <Button 
+                  variant="outlined" 
+                  size="small" 
+                  sx={{ borderRadius: 1 }}
+                  disabled={paginationModel.page >= Math.ceil(filteredItems.length / paginationModel.pageSize) - 1}
+                  onClick={() => setPaginationModel({
+                    ...paginationModel,
+                    page: Math.min(
+                      Math.ceil(filteredItems.length / paginationModel.pageSize) - 1,
+                      paginationModel.page + 1
+                    )
+                  })}
+                >
+                  Next
+                </Button>
+              </Box>
+            )
+          }}
           sx={{
-            '& .MuiDataGrid-cell:hover': {
-              cursor: 'pointer',
+            '& .MuiDataGrid-cell:focus': {
+              outline: 'none',
             },
+            '& .MuiDataGrid-row:hover': {
+              backgroundColor: 'rgba(0, 0, 0, 0.04)',
+            },
+            '& .MuiDataGrid-columnHeader': {
+              color: 'text.secondary',
+              fontWeight: 600,
+              fontSize: '0.875rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em'
+            },
+            '& .MuiDataGrid-cell': {
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 0
+            },
+            '& .MuiDataGrid-footerContainer': {
+              borderTop: '1px solid',
+              borderColor: 'divider',
+            }
           }}
         />
       </Paper>
 
-      {/* Add/Edit Inventory Item Dialog */}
-      <Dialog 
-        open={isFormOpen} 
+      {/* Item Form Dialog */}
+      <Dialog
+        open={isFormOpen}
         onClose={handleCloseForm}
-        maxWidth="sm"
+        maxWidth="md"
         fullWidth
       >
         <DialogTitle>
-          <Box display="flex" justifyContent="space-between" alignItems="center">
-            {editingItemId ? 'Edit Inventory Item' : 'Add New Inventory Item'}
-            <IconButton edge="end" color="inherit" onClick={handleCloseForm} aria-label="close">
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">
+              {editingItemId ? 'Edit Inventory Item' : 'Add New Inventory Item'}
+            </Typography>
+            <IconButton onClick={handleCloseForm} size="small">
               <CloseIcon />
             </IconButton>
           </Box>
         </DialogTitle>
-        <form onSubmit={handleSubmit(onSubmit)}>
-          <DialogContent>
-            <Stack spacing={3} sx={{ mt: 1 }}>
-              <Controller
-                name="customer"
-                control={control}
-                render={({ field }) => (
-                  <FormControl error={!!errors.customer} fullWidth>
-                    <TextField
-                      {...field}
-                      label="Customer Name"
-                      variant="outlined"
-                      error={!!errors.customer}
-                      helperText={errors.customer?.message}
-                    />
-                  </FormControl>
-                )}
-              />
-
-              <Controller
-                name="invoice"
-                control={control}
-                render={({ field }) => (
-                  <FormControl error={!!errors.invoice} fullWidth>
-                    <TextField
-                      {...field}
-                      label="Invoice Number"
-                      variant="outlined"
-                      error={!!errors.invoice}
-                      helperText={errors.invoice?.message}
-                    />
-                  </FormControl>
-                )}
-              />
-
-              <Controller
-                name="status"
-                control={control}
-                render={({ field }) => (
-                  <FormControl error={!!errors.status} fullWidth>
-                    <Select
-                      {...field}
-                      displayEmpty
-                      variant="outlined"
-                      label="Status"
-                    >
-                      <MenuItem value="Open Invoice">Open Invoice</MenuItem>
-                      <MenuItem value="Paid">Paid</MenuItem>
-                      <MenuItem value="Pending">Pending</MenuItem>
-                      <MenuItem value="Overdue">Overdue</MenuItem>
-                    </Select>
-                    {errors.status && (
-                      <FormHelperText error>{errors.status.message}</FormHelperText>
-                    )}
-                  </FormControl>
-                )}
-              />
-
-              <Controller
-                name="amount"
-                control={control}
-                render={({ field }) => (
-                  <FormControl error={!!errors.amount} fullWidth>
-                    <TextField
-                      {...field}
-                      label="Amount"
-                      variant="outlined"
-                      error={!!errors.amount}
-                      helperText={errors.amount?.message}
-                      InputProps={{
-                        startAdornment: <InputAdornment position="start">$</InputAdornment>,
-                      }}
-                    />
-                  </FormControl>
-                )}
-              />
-
-              <Grid container spacing={2}>
-                <Grid item xs={12} sm={6}>
-                  <Controller
-                    name="issueDate"
-                    control={control}
-                    render={({ field }) => (
-                      <FormControl error={!!errors.issueDate} fullWidth>
-                        <TextField
-                          {...field}
-                          label="Issue Date"
-                          type="date"
-                          variant="outlined"
-                          error={!!errors.issueDate}
-                          helperText={errors.issueDate?.message}
-                          InputLabelProps={{ shrink: true }}
-                        />
-                      </FormControl>
-                    )}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Controller
-                    name="dueDate"
-                    control={control}
-                    render={({ field }) => (
-                      <FormControl error={!!errors.dueDate} fullWidth>
-                        <TextField
-                          {...field}
-                          label="Due Date"
-                          type="date"
-                          variant="outlined"
-                          error={!!errors.dueDate}
-                          helperText={errors.dueDate?.message}
-                          InputLabelProps={{ shrink: true }}
-                        />
-                      </FormControl>
-                    )}
-                  />
-                </Grid>
+        <DialogContent dividers>
+          <form id="inventory-form" onSubmit={handleSubmit(onSubmit)}>
+            <Grid container spacing={3}>
+              <Grid item xs={12} md={6}>
+                <Controller
+                  name="product"
+                  control={control}
+                  render={({ field }) => (
+                    <FormControl error={!!errors.product} fullWidth>
+                      <TextField
+                        {...field}
+                        label="Product Name"
+                        variant="outlined"
+                        error={!!errors.product}
+                        helperText={errors.product?.message}
+                      />
+                    </FormControl>
+                  )}
+                />
               </Grid>
 
-              {/* Lot Management Section */}
-              <Divider sx={{ my: 2 }}>
-                <Typography variant="subtitle2" color="text.secondary">
-                  Lot Management
-                </Typography>
-              </Divider>
-
-              <Controller
-                name="lotTracked"
-                control={control}
-                render={({ field }) => (
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={field.value}
-                        onChange={(e) => field.onChange(e.target.checked)}
+              <Grid item xs={12} md={6}>
+                <Controller
+                  name="sku"
+                  control={control}
+                  render={({ field }) => (
+                    <FormControl error={!!errors.sku} fullWidth>
+                      <TextField
+                        {...field}
+                        label="SKU"
+                        variant="outlined"
+                        error={!!errors.sku}
+                        helperText={errors.sku?.message}
                       />
-                    }
-                    label={
-                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                        <Typography variant="body2" sx={{ mr: 0.5 }}>
-                          Track by Lot
-                        </Typography>
-                        <Tooltip title="Enable lot tracking to manage inventory with FIFO/FEFO strategies, expiry dates, and lot-specific costing">
-                          <HelpOutlineIcon fontSize="small" color="action" />
-                        </Tooltip>
-                      </Box>
-                    }
-                  />
-                )}
-              />
+                    </FormControl>
+                  )}
+                />
+              </Grid>
 
-              {isLotTracked && (
+              <Grid item xs={12} md={6}>
+                <Controller
+                  name="location"
+                  control={control}
+                  render={({ field }) => (
+                    <FormControl error={!!errors.location} fullWidth>
+                      <TextField
+                        {...field}
+                        label="Location"
+                        variant="outlined"
+                        error={!!errors.location}
+                        helperText={errors.location?.message}
+                      />
+                    </FormControl>
+                  )}
+                />
+              </Grid>
+
+              <Grid item xs={12} md={6}>
+                <Controller
+                  name="availableQuantity"
+                  control={control}
+                  render={({ field }) => (
+                    <FormControl error={!!errors.availableQuantity} fullWidth>
+                      <TextField
+                        {...field}
+                        label="Available Quantity"
+                        variant="outlined"
+                        type="number"
+                        error={!!errors.availableQuantity}
+                        helperText={errors.availableQuantity?.message}
+                      />
+                    </FormControl>
+                  )}
+                />
+              </Grid>
+
+              <Grid item xs={12} md={6}>
+                <Controller
+                  name="status"
+                  control={control}
+                  render={({ field }) => (
+                    <FormControl error={!!errors.status} fullWidth>
+                      <TextField
+                        {...field}
+                        select
+                        label="Status"
+                        variant="outlined"
+                        error={!!errors.status}
+                        helperText={errors.status?.message}
+                      >
+                        <MenuItem value="Active">Active</MenuItem>
+                        <MenuItem value="Inactive">Inactive</MenuItem>
+                        <MenuItem value="Low Stock">Low Stock</MenuItem>
+                      </TextField>
+                    </FormControl>
+                  )}
+                />
+              </Grid>
+
+              <Grid item xs={12}>
+                <Divider sx={{ my: 1 }} />
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <Controller
+                    name="lotTracked"
+                    control={control}
+                    render={({ field }) => (
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={field.value}
+                            onChange={(e) => field.onChange(e.target.checked)}
+                          />
+                        }
+                        label="Lot Tracked"
+                      />
+                    )}
+                  />
+                  <Tooltip title="Enable lot tracking for this inventory item">
+                    <HelpOutlineIcon fontSize="small" sx={{ ml: 1, color: 'text.secondary' }} />
+                  </Tooltip>
+                </Box>
+              </Grid>
+
+              {lotTracked && (
                 <>
-                  <Controller
-                    name="lotNumber"
-                    control={control}
-                    render={({ field }) => (
-                      <FormControl error={!!errors.lotNumber} fullWidth>
-                        <TextField
-                          {...field}
-                          label="Lot Number"
-                          variant="outlined"
-                          error={!!errors.lotNumber}
-                          helperText={errors.lotNumber?.message}
-                          placeholder="e.g., LOT-2025-001"
-                        />
-                      </FormControl>
-                    )}
-                  />
+                  <Grid item xs={12} md={6}>
+                    <Controller
+                      name="lotNumber"
+                      control={control}
+                      render={({ field }) => (
+                        <FormControl fullWidth>
+                          <TextField
+                            {...field}
+                            label="Lot Number"
+                            variant="outlined"
+                          />
+                        </FormControl>
+                      )}
+                    />
+                  </Grid>
 
-                  <Controller
-                    name="expiryDate"
-                    control={control}
-                    render={({ field }) => (
-                      <FormControl error={!!errors.expiryDate} fullWidth>
-                        <TextField
-                          label="Expiry Date"
-                          type="date"
-                          value={lotExpiryDateStr}
-                          onChange={(e) => {
-                            const dateStr = e.target.value;
-                            setLotExpiryDateStr(dateStr);
-                            field.onChange(dateStr);
-                          }}
-                          fullWidth
-                          error={!!errors.expiryDate}
-                          helperText={errors.expiryDate?.message}
-                          InputLabelProps={{ shrink: true }}
-                        />
-                      </FormControl>
-                    )}
-                  />
+                  <Grid item xs={12} md={6}>
+                    <Controller
+                      name="expiryDate"
+                      control={control}
+                      render={({ field }) => (
+                        <FormControl fullWidth>
+                          <TextField
+                            {...field}
+                            label="Expiry Date"
+                            variant="outlined"
+                            type="date"
+                            InputLabelProps={{ shrink: true }}
+                          />
+                        </FormControl>
+                      )}
+                    />
+                  </Grid>
 
-                  <Controller
-                    name="lotStrategy"
-                    control={control}
-                    render={({ field }) => (
-                      <FormControl error={!!errors.lotStrategy} fullWidth>
-                        <Select
-                          {...field}
-                          displayEmpty
-                          variant="outlined"
-                          label="Lot Strategy"
-                        >
-                          <MenuItem value="FIFO">FIFO (First In, First Out)</MenuItem>
-                          <MenuItem value="FEFO">FEFO (First Expired, First Out)</MenuItem>
-                        </Select>
-                        {errors.lotStrategy && (
-                          <FormHelperText error>{errors.lotStrategy.message}</FormHelperText>
-                        )}
-                      </FormControl>
-                    )}
-                  />
+                  <Grid item xs={12} md={6}>
+                    <Controller
+                      name="lotStrategy"
+                      control={control}
+                      render={({ field }) => (
+                        <FormControl fullWidth>
+                          <TextField
+                            {...field}
+                            select
+                            label="Lot Strategy"
+                            variant="outlined"
+                          >
+                            <MenuItem value="FIFO">FIFO (First In, First Out)</MenuItem>
+                            <MenuItem value="FEFO">FEFO (First Expired, First Out)</MenuItem>
+                          </TextField>
+                        </FormControl>
+                      )}
+                    />
+                  </Grid>
 
-                  <Controller
-                    name="costPricePerUnit"
-                    control={control}
-                    render={({ field }) => (
-                      <FormControl error={!!errors.costPricePerUnit} fullWidth>
-                        <TextField
-                          {...field}
-                          label="Cost Price Per Unit"
-                          variant="outlined"
-                          error={!!errors.costPricePerUnit}
-                          helperText={errors.costPricePerUnit?.message}
-                          InputProps={{
-                            startAdornment: <InputAdornment position="start">$</InputAdornment>,
-                          }}
-                        />
-                      </FormControl>
-                    )}
-                  />
+                  <Grid item xs={12} md={6}>
+                    <Controller
+                      name="costPricePerUnit"
+                      control={control}
+                      render={({ field }) => (
+                        <FormControl fullWidth>
+                          <TextField
+                            {...field}
+                            label="Cost Price Per Unit"
+                            variant="outlined"
+                            InputProps={{
+                              startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                            }}
+                          />
+                        </FormControl>
+                      )}
+                    />
+                  </Grid>
                 </>
               )}
-            </Stack>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={handleCloseForm}>Cancel</Button>
-            <Button 
-              type="submit" 
-              variant="contained" 
-              disabled={isSubmitting}
-            >
-              {editingItemId ? 'Update' : 'Add'} Item
-            </Button>
-          </DialogActions>
-        </form>
+            </Grid>
+          </form>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseForm} color="inherit">
+            Cancel
+          </Button>
+          <Button 
+            type="submit"
+            form="inventory-form"
+            variant="contained"
+            disabled={isSubmitting}
+            sx={{ 
+              bgcolor: '#003366',
+              '&:hover': {
+                bgcolor: '#002244'
+              }
+            }}
+          >
+            {editingItemId ? 'Update' : 'Add'} Item
+          </Button>
+        </DialogActions>
       </Dialog>
-    </div>
+    </Box>
   );
 }
