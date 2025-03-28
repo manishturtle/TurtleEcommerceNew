@@ -208,41 +208,30 @@ class InventoryViewSet(TenantViewMixin, viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResultsSetPagination
     filter_backends = [
-        DjangoFilterBackend,
-        filters.SearchFilter,
-        filters.OrderingFilter
-    ]
+            DjangoFilterBackend,
+            filters.SearchFilter,
+            filters.OrderingFilter
+        ]
     filterset_class = InventoryFilter
     search_fields = ['product__sku', 'product__name', 'location__name']
     ordering_fields = [
-        'product__sku', 'product__name', 'location__name',
-        'stock_quantity', 'reserved_quantity', 'last_updated',
-        'available_to_promise'
-    ]
+            'product__sku', 'product__name', 'location__name',
+            'stock_quantity', 'reserved_quantity', 'last_updated',
+            'available_to_promise'
+        ]
     ordering = ['product__name', 'location__name']
-
+    
     def get_queryset(self):
         """
         Return all inventory records for the current tenant.
         django-tenants handles tenant filtering automatically.
+        
+        Annotate the queryset with calculated fields to avoid property setter errors.
         """
-        from django.db import connection
-        
-        # Ensure we're using the inventory schema in the search path
-        if hasattr(connection, 'inventory_schema') and hasattr(connection, 'schema_name'):
-            with connection.cursor() as cursor:
-                cursor.execute(f'SET search_path TO "{connection.inventory_schema}", "{connection.schema_name}", public')
-        
-        # Get the queryset with tenant filtering
         queryset = Inventory.objects.all()
         
-        # Add available_to_promise as an annotated field
-        queryset = queryset.annotate(
-            available_to_promise=ExpressionWrapper(
-                F('stock_quantity') - F('reserved_quantity'),
-                output_field=fields.IntegerField()
-            )
-        )
+        # Apply select_related for nested serializers
+        queryset = queryset.select_related('product', 'location')
         
         return queryset
     

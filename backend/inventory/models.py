@@ -263,8 +263,8 @@ class Inventory(InventoryAwareModel):
         verbose_name_plural = 'Inventories'
         ordering = ['product__name', 'location__name']
 
-    @property
-    def available_to_promise(self):
+    # Calculate available to promise
+    def get_available_to_promise(self):
         return max(0, self.stock_quantity - self.reserved_quantity)
 
     def __str__(self):

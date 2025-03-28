@@ -33,9 +33,15 @@ export const fetchAdjustmentReasons = async (params?: ApiParams): Promise<Pagina
   return response.data;
 };
 
-// Fetch inventory items
-export const fetchInventoryItems = async (params?: ApiParams): Promise<PaginatedResponse<InventoryItem>> => {
-  const response = await api.get('/inventory/', { params });
+// Fetch inventory items with filtering options
+export interface InventoryQueryParams extends ApiParams {
+  product?: number;
+  location?: number;
+  is_active?: boolean;
+}
+
+export const fetchInventoryItems = async (params?: InventoryQueryParams): Promise<PaginatedResponse<InventoryItem>> => {
+  const response = await api.get('/inventory/inventory/', { params });
   return response.data;
 };
 
@@ -69,13 +75,13 @@ export const fetchLocations = async (params?: ApiParams): Promise<PaginatedRespo
 
 // Fetch a single inventory item
 export const fetchInventoryItem = async (id: number): Promise<InventoryItem> => {
-  const response = await api.get(`/inventory/${id}/`);
+  const response = await api.get(`/inventory/inventory/${id}/`);
   return response.data;
 };
 
 // Fetch inventory adjustments for a specific inventory item
 export const fetchInventoryAdjustments = async (inventoryId: number, params?: ApiParams): Promise<PaginatedResponse<InventoryAdjustment>> => {
-  const response = await api.get(`/inventory/${inventoryId}/adjustments/`, { params });
+  const response = await api.get(`/inventory/inventory/${inventoryId}/adjustments/`, { params });
   return response.data;
 };
 
@@ -97,7 +103,7 @@ export const createInventoryAdjustment = async (data: CreateAdjustmentParams): P
 
 // Fetch current stock levels for a product at a location
 export const fetchCurrentStock = async (productId: number, locationId: number): Promise<InventoryItem> => {
-  const response = await api.get('/inventory/', { 
+  const response = await api.get('/inventory/inventory/', { 
     params: { 
       product: productId, 
       location: locationId,

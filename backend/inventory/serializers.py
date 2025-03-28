@@ -142,7 +142,7 @@ class InventorySerializer(serializers.ModelSerializer):
     """
     Serializer for Inventory model with calculated ATP and nested relationships.
     """
-    available_to_promise = serializers.IntegerField(read_only=True)
+    available_to_promise = serializers.SerializerMethodField()
     product = SimpleProductSerializer(read_only=True)
     location = SimpleLocationSerializer(read_only=True)
     
@@ -163,7 +163,21 @@ class InventorySerializer(serializers.ModelSerializer):
             'available_to_promise', 'total_available',
             'total_unavailable', 'stock_status'
         ]
-        read_only_fields = fields  # All fields are read-only for this endpoint
+        read_only_fields = [
+            'id', 'product', 'location', 
+            'stock_quantity', 'reserved_quantity', 
+            'non_saleable_quantity', 'on_order_quantity',
+            'in_transit_quantity', 'returned_quantity', 
+            'hold_quantity', 'backorder_quantity',
+            'low_stock_threshold', 'last_updated',
+            'total_available', 'total_unavailable', 'stock_status'
+        ]
+
+    def get_available_to_promise(self, obj):
+        """
+        Use the model's get_available_to_promise method
+        """
+        return obj.get_available_to_promise()
 
     def get_total_available(self, obj):
         """
@@ -187,7 +201,7 @@ class InventorySerializer(serializers.ModelSerializer):
         """
         Determine stock status based on ATP and threshold
         """
-        atp = obj.available_to_promise
+        atp = obj.get_available_to_promise()
         threshold = obj.low_stock_threshold
 
         if atp <= 0:

@@ -50,7 +50,7 @@ import Inventory2Icon from '@mui/icons-material/Inventory2';
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
 import { useAdjustmentReasons } from '@/app/hooks/useAdjustmentReasons';
 import { useAdjustmentTypes } from '@/app/hooks/useAdjustmentTypes';
-import { fetchCurrentStock, createInventoryAdjustment, fetchLocations, FulfillmentLocation } from '@/app/services/api';
+import { fetchCurrentStock, createInventoryAdjustment, fetchLocations, fetchInventoryItems, FulfillmentLocation } from '@/app/services/api';
 
 // Define Zod schema for inventory adjustment validation
 const inventoryAdjustmentSchema = z.object({
@@ -112,15 +112,15 @@ export default function AddInventoryPage() {
   // State for current stock
   const [currentStock, setCurrentStock] = useState({
     id: 0,
-    stockQuantity: 1250, // Default values for UI display
-    reservedQuantity: 50,
+    stockQuantity: 0,
+    reservedQuantity: 0,
     availableQuantity: 0,
-    nonSaleable: 10,
-    onOrder: 200,
-    inTransit: 75,
-    returned: 5,
-    onHold: 25,
-    backorder: 100
+    nonSaleable: 0,
+    onOrder: 0,
+    inTransit: 0,
+    returned: 0,
+    onHold: 0,
+    backorder: 0
   });
   
   // State for loading and error handling
@@ -177,25 +177,62 @@ export default function AddInventoryPage() {
       try {
         setIsLoadingStock(true);
         setStockError(null);
-        const stock = await fetchCurrentStock(parseInt(productId), parseInt(locationId));
+        
+        // Use fetchInventoryItems API to get current quantities from the correct endpoint
+        const response = await fetchInventoryItems({ 
+          product: parseInt(productId), 
+          location: parseInt(locationId)
+        });
+        
+        console.log('Inventory response:', response); // Log the response for debugging
+        
+        const stock = response.results.length > 0 ? response.results[0] : null;
         
         if (stock) {
           setCurrentStock({
             id: stock.id,
-            stockQuantity: stock.quantity,
-            reservedQuantity: stock.reserved_quantity,
-            availableQuantity: stock.available_quantity,
-            nonSaleable: stock.non_saleable || 10,
-            onOrder: stock.on_order || 200,
-            inTransit: stock.in_transit || 75,
-            returned: stock.returned || 5,
-            onHold: stock.on_hold || 25,
-            backorder: stock.backorder || 100
+            stockQuantity: stock.stock_quantity || 0,
+            reservedQuantity: stock.reserved_quantity || 0,
+            availableQuantity: stock.available_to_promise || 0,
+            nonSaleable: stock.non_saleable_quantity || 0,
+            onOrder: stock.on_order_quantity || 0,
+            inTransit: stock.in_transit_quantity || 0,
+            returned: stock.returned_quantity || 0,
+            onHold: stock.hold_quantity || 0,
+            backorder: stock.backorder_quantity || 0
+          });
+        } else {
+          // If no stock record exists, reset to zeros
+          setCurrentStock({
+            id: 0,
+            stockQuantity: 0,
+            reservedQuantity: 0,
+            availableQuantity: 0,
+            nonSaleable: 0,
+            onOrder: 0,
+            inTransit: 0,
+            returned: 0,
+            onHold: 0,
+            backorder: 0
           });
         }
       } catch (error) {
         console.error('Error fetching stock:', error);
         setStockError('Failed to fetch current stock levels');
+        
+        // Reset to zeros on error
+        setCurrentStock({
+          id: 0,
+          stockQuantity: 0,
+          reservedQuantity: 0,
+          availableQuantity: 0,
+          nonSaleable: 0,
+          onOrder: 0,
+          inTransit: 0,
+          returned: 0,
+          onHold: 0,
+          backorder: 0
+        });
       } finally {
         setIsLoadingStock(false);
       }
@@ -493,49 +530,59 @@ export default function AddInventoryPage() {
                     <Typography variant="body1" fontWeight="500" mb={1.5}>
                       Current Quantities
                     </Typography>
-                    <Paper sx={{ 
-                      p: 2, 
-                      bgcolor: '#f9fafb', 
-                      borderRadius: 2,
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      overflow: 'auto' // Add overflow auto to handle content
-                    }}>
-                      <Grid container spacing={2}>
-                        <Grid item xs={6}>
-                          <Typography variant="body2" color="text.secondary">Stock Quantity</Typography>
-                          <Typography variant="body1" fontWeight="500">{currentStock.stockQuantity.toLocaleString()}</Typography>
+                    {isLoadingStock ? (
+                      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100px' }}>
+                        <CircularProgress size={24} />
+                      </Box>
+                    ) : stockError ? (
+                      <Alert severity="error" sx={{ mb: 2 }}>
+                        {stockError}
+                      </Alert>
+                    ) : (
+                      <Paper sx={{ 
+                        p: 2, 
+                        bgcolor: '#f9fafb', 
+                        borderRadius: 2,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        overflow: 'auto' // Add overflow auto to handle content
+                      }}>
+                        <Grid container spacing={2}>
+                          <Grid item xs={6}>
+                            <Typography variant="body2" color="text.secondary">Stock Quantity</Typography>
+                            <Typography variant="body1" fontWeight="500">{currentStock.stockQuantity.toLocaleString()}</Typography>
+                          </Grid>
+                          <Grid item xs={6}>
+                            <Typography variant="body2" color="text.secondary">Reserved Quantity</Typography>
+                            <Typography variant="body1" fontWeight="500">{currentStock.reservedQuantity.toLocaleString()}</Typography>
+                          </Grid>
+                          <Grid item xs={6}>
+                            <Typography variant="body2" color="text.secondary">Non-Saleable</Typography>
+                            <Typography variant="body1" fontWeight="500">{currentStock.nonSaleable.toLocaleString()}</Typography>
+                          </Grid>
+                          <Grid item xs={6}>
+                            <Typography variant="body2" color="text.secondary">On Order</Typography>
+                            <Typography variant="body1" fontWeight="500">{currentStock.onOrder.toLocaleString()}</Typography>
+                          </Grid>
+                          <Grid item xs={6}>
+                            <Typography variant="body2" color="text.secondary">In Transit</Typography>
+                            <Typography variant="body1" fontWeight="500">{currentStock.inTransit.toLocaleString()}</Typography>
+                          </Grid>
+                          <Grid item xs={6}>
+                            <Typography variant="body2" color="text.secondary">Returned</Typography>
+                            <Typography variant="body1" fontWeight="500">{currentStock.returned.toLocaleString()}</Typography>
+                          </Grid>
+                          <Grid item xs={6}>
+                            <Typography variant="body2" color="text.secondary">On Hold</Typography>
+                            <Typography variant="body1" fontWeight="500">{currentStock.onHold.toLocaleString()}</Typography>
+                          </Grid>
+                          <Grid item xs={6}>
+                            <Typography variant="body2" color="text.secondary">Backorder</Typography>
+                            <Typography variant="body1" fontWeight="500">{currentStock.backorder.toLocaleString()}</Typography>
+                          </Grid>
                         </Grid>
-                        <Grid item xs={6}>
-                          <Typography variant="body2" color="text.secondary">Reserved Quantity</Typography>
-                          <Typography variant="body1" fontWeight="500">{currentStock.reservedQuantity.toLocaleString()}</Typography>
-                        </Grid>
-                        <Grid item xs={6}>
-                          <Typography variant="body2" color="text.secondary">Non-Saleable</Typography>
-                          <Typography variant="body1" fontWeight="500">{currentStock.nonSaleable.toLocaleString()}</Typography>
-                        </Grid>
-                        <Grid item xs={6}>
-                          <Typography variant="body2" color="text.secondary">On Order</Typography>
-                          <Typography variant="body1" fontWeight="500">{currentStock.onOrder.toLocaleString()}</Typography>
-                        </Grid>
-                        <Grid item xs={6}>
-                          <Typography variant="body2" color="text.secondary">In Transit</Typography>
-                          <Typography variant="body1" fontWeight="500">{currentStock.inTransit.toLocaleString()}</Typography>
-                        </Grid>
-                        <Grid item xs={6}>
-                          <Typography variant="body2" color="text.secondary">Returned</Typography>
-                          <Typography variant="body1" fontWeight="500">{currentStock.returned.toLocaleString()}</Typography>
-                        </Grid>
-                        <Grid item xs={6}>
-                          <Typography variant="body2" color="text.secondary">On Hold</Typography>
-                          <Typography variant="body1" fontWeight="500">{currentStock.onHold.toLocaleString()}</Typography>
-                        </Grid>
-                        <Grid item xs={6}>
-                          <Typography variant="body2" color="text.secondary">Backorder</Typography>
-                          <Typography variant="body1" fontWeight="500">{currentStock.backorder.toLocaleString()}</Typography>
-                        </Grid>
-                      </Grid>
-                    </Paper>
+                      </Paper>
+                    )}
                   </Box>
                 </Box>
               </Grid>
