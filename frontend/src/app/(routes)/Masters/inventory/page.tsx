@@ -51,6 +51,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import InventoryStatsCard from '@/app/components/InventoryStatsCard';
+import ContentCard from '@/app/components/ContentCard';
 
 // Define Zod schema for inventory item validation
 const inventoryItemSchema = z.object({
@@ -66,6 +68,7 @@ const inventoryItemSchema = z.object({
   expiryDate: z.string().optional(),
   lotStrategy: z.enum(['FIFO', 'FEFO']).optional(),
   costPricePerUnit: z.string().optional(),
+  customer: z.string().optional(),
 });
 
 // TypeScript type derived from Zod schema
@@ -108,6 +111,7 @@ interface InventoryItem {
   expiryDate?: string;
   lotStrategy?: 'FIFO' | 'FEFO';
   costPricePerUnit?: string;
+  customer?: string;
 }
 
 // Mock data for demonstration - sanitize data as it's added
@@ -123,7 +127,8 @@ const mockInventoryItems: InventoryItem[] = [
     lotNumber: 'LOT-2025-001',
     expiryDate: '2026-03-17',
     lotStrategy: 'FIFO',
-    costPricePerUnit: '$7.99'
+    costPricePerUnit: '$7.99',
+    customer: 'CUSTOMER'
   },
   {
     id: 2,
@@ -132,7 +137,8 @@ const mockInventoryItems: InventoryItem[] = [
     location: sanitizeString('Store Front'),
     availableQuantity: 120,
     status: sanitizeString('Active'),
-    lotTracked: false
+    lotTracked: false,
+    customer: 'DEVOTEAM'
   },
   {
     id: 3,
@@ -206,6 +212,7 @@ export default function InventoryPage() {
       expiryDate: '',
       lotStrategy: 'FIFO',
       costPricePerUnit: '',
+      customer: ''
     }
   });
 
@@ -266,6 +273,7 @@ export default function InventoryPage() {
           expiryDate: itemToEdit.expiryDate || '',
           lotStrategy: itemToEdit.lotStrategy || 'FIFO',
           costPricePerUnit: itemToEdit.costPricePerUnit || '',
+          customer: itemToEdit.customer || ''
         });
       }
     } else {
@@ -285,6 +293,7 @@ export default function InventoryPage() {
         expiryDate: '',
         lotStrategy: 'FIFO',
         costPricePerUnit: '',
+        customer: ''
       });
     }
     
@@ -310,6 +319,7 @@ export default function InventoryPage() {
       expiryDate: data.lotTracked ? sanitizeString(data.expiryDate || '') : undefined,
       lotStrategy: data.lotTracked ? data.lotStrategy : undefined,
       costPricePerUnit: data.lotTracked ? sanitizeString(data.costPricePerUnit || '') : undefined,
+      customer: sanitizeString(data.customer || '')
     };
     
     if (editingItemId) {
@@ -340,47 +350,59 @@ export default function InventoryPage() {
   // Define columns for the DataGrid
   const columns: GridColDef[] = useMemo(() => [
     { 
-      field: 'selection',
+      field: 'checkbox',
       headerName: '',
       width: 50,
       sortable: false,
       filterable: false,
       disableColumnMenu: true,
       renderHeader: () => (
-        <Checkbox
-          indeterminate={selectionModel.length > 0 && selectionModel.length < filteredItems.length}
-          checked={selectionModel.length > 0 && selectionModel.length === filteredItems.length}
-          onChange={(event) => {
-            const newSelectionModel = event.target.checked 
-              ? filteredItems.map(item => item.id) 
-              : [];
-            setSelectionModel(newSelectionModel);
-          }}
-        />
+        <Box sx={{ pl: 1 }}>
+          <Checkbox
+            indeterminate={selectionModel.length > 0 && selectionModel.length < filteredItems.length}
+            checked={selectionModel.length > 0 && selectionModel.length === filteredItems.length}
+            onChange={(event) => {
+              const newSelectionModel = event.target.checked 
+                ? filteredItems.map(item => item.id) 
+                : [];
+              setSelectionModel(newSelectionModel);
+            }}
+            sx={{
+              padding: 0,
+              '& .MuiSvgIcon-root': { fontSize: 20 }
+            }}
+          />
+        </Box>
       ),
       renderCell: (params) => {
         const isSelected = selectionModel.includes(params.row.id);
         return (
-          <Checkbox
-            checked={isSelected}
-            onChange={() => {
-              const id = params.row.id;
-              const newSelectionModel = [...selectionModel];
-              
-              if (!isSelected) {
-                if (!newSelectionModel.includes(id)) {
-                  newSelectionModel.push(id);
+          <Box sx={{ pl: 1 }}>
+            <Checkbox
+              checked={isSelected}
+              onChange={() => {
+                const id = params.row.id;
+                const newSelectionModel = [...selectionModel];
+                
+                if (!isSelected) {
+                  if (!newSelectionModel.includes(id)) {
+                    newSelectionModel.push(id);
+                  }
+                } else {
+                  const index = newSelectionModel.indexOf(id);
+                  if (index > -1) {
+                    newSelectionModel.splice(index, 1);
+                  }
                 }
-              } else {
-                const index = newSelectionModel.indexOf(id);
-                if (index > -1) {
-                  newSelectionModel.splice(index, 1);
-                }
-              }
-              
-              setSelectionModel(newSelectionModel);
-            }}
-          />
+                
+                setSelectionModel(newSelectionModel);
+              }}
+              sx={{
+                padding: 0,
+                '& .MuiSvgIcon-root': { fontSize: 20 }
+              }}
+            />
+          </Box>
         );
       }
     },
@@ -441,6 +463,7 @@ export default function InventoryPage() {
         </Box>
       )
     },
+   
     { 
       field: 'availableQuantity', 
       headerName: 'Available Qty', 
@@ -605,159 +628,125 @@ export default function InventoryPage() {
       {/* Stats Overview */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={6} md={3}>
-          <Paper elevation={0} sx={{ p: 3, borderRadius: 3 }}>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              Total Items
-            </Typography>
-            <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', mb: 1 }}>
-              466.2k
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', color: 'success.main' }}>
-              <Box component="span" sx={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                mr: 0.5,
-                fontSize: '0.875rem'
-              }}>
-                ↑ 20.6%
-              </Box>
-            </Box>
-          </Paper>
+          <InventoryStatsCard 
+            title="Total Items"
+            value="466.2k"
+            changeValue="20.6%"
+            changeDirection="up"
+          />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Paper elevation={0} sx={{ p: 3, borderRadius: 3 }}>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              Draft
-            </Typography>
-            <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', mb: 1 }}>
-              500
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', color: 'error.main' }}>
-              <Box component="span" sx={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                mr: 0.5,
-                fontSize: '0.875rem'
-              }}>
-                ↓ 5.5%
-              </Box>
-            </Box>
-          </Paper>
+          <InventoryStatsCard 
+            title="Draft"
+            value="500"
+            changeValue="5.5%"
+            changeDirection="down"
+          />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Paper elevation={0} sx={{ p: 3, borderRadius: 3 }}>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              In Transit
-            </Typography>
-            <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', mb: 1 }}>
-              134.4k
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', color: 'success.main' }}>
-              <Box component="span" sx={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                mr: 0.5,
-                fontSize: '0.875rem'
-              }}>
-                ↑ 20.9%
-              </Box>
-            </Box>
-          </Paper>
+          <InventoryStatsCard 
+            title="In Transit"
+            value="134.4k"
+            changeValue="20.9%"
+            changeDirection="up"
+          />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Paper elevation={0} sx={{ p: 3, borderRadius: 3 }}>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              Low Stock
-            </Typography>
-            <Typography variant="h4" component="div" sx={{ fontWeight: 'bold', mb: 1 }}>
-              800
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', color: 'success.main' }}>
-              <Box component="span" sx={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                mr: 0.5,
-                fontSize: '0.875rem'
-              }}>
-                ↑ 60.2%
-              </Box>
-            </Box>
-          </Paper>
+          <InventoryStatsCard 
+            title="Low Stock"
+            value="800"
+            changeValue="60.2%"
+            changeDirection="up"
+          />
         </Grid>
       </Grid>
 
       {/* Search and filter section */}
-      <Paper 
-        elevation={0}
-        sx={{ 
-          p: 3, 
-          mb: 3, 
-          borderRadius: 3,
+      <ContentCard sx={{ mb: 3 }}>
+        <Box sx={{ 
           display: 'flex',
           flexDirection: { xs: 'column', sm: 'row' },
           justifyContent: 'space-between',
           alignItems: { xs: 'flex-start', sm: 'center' },
           gap: 2
-        }}
-      >
-        <Box sx={{ 
-          display: 'flex', 
-          flexDirection: { xs: 'column', sm: 'row' },
-          gap: 2,
-          width: { xs: '100%', sm: 'auto' }
         }}>
-          <TextField
-            placeholder="Search inventory..."
-            value={searchTerm}
-            onChange={handleSearchChange}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon />
-                </InputAdornment>
-              )
-            }}
-            variant="outlined"
-            size="small"
-            sx={{ 
-              flex: { xs: '1', sm: '1 1 300px' },
-              maxWidth: { sm: '300px' }
-            }}
-          />
+          <Box sx={{ 
+            display: 'flex', 
+            flexDirection: { xs: 'column', sm: 'row' },
+            gap: 2,
+            width: { xs: '100%', sm: 'auto' }
+          }}>
+            <TextField
+              placeholder="Search inventory..."
+              value={searchTerm}
+              onChange={handleSearchChange}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon />
+                  </InputAdornment>
+                )
+              }}
+              variant="outlined"
+              size="small"
+              sx={{ 
+                flex: { xs: '1', sm: '1 1 300px' },
+                maxWidth: { sm: '300px' }
+              }}
+            />
+            
+            <TextField
+              placeholder="01/01/2025 - 12/31/2025"
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <CalendarTodayIcon />
+                  </InputAdornment>
+                )
+              }}
+              variant="outlined"
+              size="small"
+              sx={{ 
+                flex: { xs: '1', sm: '1 1 300px' },
+                maxWidth: { sm: '300px' }
+              }}
+            />
+          </Box>
           
-          <TextField
-            placeholder="01/01/2025 - 12/31/2025"
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <CalendarTodayIcon />
-                </InputAdornment>
-              )
-            }}
-            variant="outlined"
-            size="small"
-            sx={{ 
-              flex: { xs: '1', sm: '1 1 300px' },
-              maxWidth: { sm: '300px' }
-            }}
-          />
+          <Button 
+            variant="outlined" 
+            startIcon={<FilterListIcon />}
+            sx={{ color: 'text.secondary', borderColor: 'divider' }}
+          >
+            More Filters
+          </Button>
         </Box>
-        
-        <Button 
-          variant="outlined" 
-          startIcon={<FilterListIcon />}
-          sx={{ color: 'text.secondary', borderColor: 'divider' }}
-        >
-          More Filters
-        </Button>
-      </Paper>
+      </ContentCard>
 
       {/* Data grid */}
-      <Paper 
-        elevation={0}
-        sx={{ 
-          borderRadius: 3,
-          overflow: 'hidden',
+      <ContentCard
+        title="Inventory Items"
+        action={
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button 
+              variant="outlined" 
+              size="small" 
+              startIcon={<FilterListIcon />}
+              sx={{ borderRadius: 1 }}
+            >
+              Filter
+            </Button>
+            <Button 
+              variant="outlined" 
+              size="small" 
+              startIcon={<FileDownloadIcon />}
+              sx={{ borderRadius: 1 }}
+            >
+              Export
+            </Button>
+          </Box>
+        }
+        sx={{
           '& .MuiDataGrid-root': {
             border: 'none',
           },
@@ -864,7 +853,7 @@ export default function InventoryPage() {
             }
           }}
         />
-      </Paper>
+      </ContentCard>
 
       {/* Item Form Dialog */}
       <Dialog
@@ -976,6 +965,26 @@ export default function InventoryPage() {
                         <MenuItem value="Active">Active</MenuItem>
                         <MenuItem value="Inactive">Inactive</MenuItem>
                         <MenuItem value="Low Stock">Low Stock</MenuItem>
+                      </TextField>
+                    </FormControl>
+                  )}
+                />
+              </Grid>
+
+              <Grid item xs={12} md={6}>
+                <Controller
+                  name="customer"
+                  control={control}
+                  render={({ field }) => (
+                    <FormControl fullWidth>
+                      <TextField
+                        {...field}
+                        select
+                        label="Customer/Team"
+                        variant="outlined"
+                      >
+                        <MenuItem value="CUSTOMER">CUSTOMER</MenuItem>
+                        <MenuItem value="DEVOTEAM">DEVOTEAM</MenuItem>
                       </TextField>
                     </FormControl>
                   )}
