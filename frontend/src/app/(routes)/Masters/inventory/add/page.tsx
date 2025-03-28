@@ -197,13 +197,7 @@ export default function AddInventoryPage() {
   };
 
   return (
-    <Box sx={{ 
-      bgcolor: '#f9fafb', 
-      minHeight: 'calc(100vh - 73px)',
-      display: 'flex',
-      flexDirection: 'column',
-      pb: { xs: 8, sm: 4 } // Add extra padding at the bottom
-    }}>
+    <Box>
       {/* Header */}
       <Box sx={{ 
         display: 'flex', 
@@ -211,12 +205,16 @@ export default function AddInventoryPage() {
         justifyContent: 'space-between', 
         alignItems: { xs: 'flex-start', sm: 'center' }, 
         gap: { xs: 2, sm: 0 },
-        p: { xs: 2, sm: 2 },
-        px: { xs: 2, sm: 4 }
+        mb: 3
       }}>
-        <Typography variant="h5" fontWeight="600">
-          Add Inventory
-        </Typography>
+        <Box>
+          <Typography variant="h5" component="h1" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+            Add Inventory
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Add or adjust inventory items
+          </Typography>
+        </Box>
         <Button
           variant="contained"
           color="primary"
@@ -236,7 +234,7 @@ export default function AddInventoryPage() {
       </Box>
 
       {/* Main Content */}
-      <Box component="main" sx={{ flex: 1, p: { xs: 2, sm: 4 } }}>
+      <Box component="main">
         {submitError && (
           <Alert severity="error" sx={{ mb: 4, borderRadius: 2 }}>
             {submitError}
