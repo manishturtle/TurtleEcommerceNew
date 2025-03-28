@@ -5,7 +5,8 @@ import {
   GridRowSelectionModel,
   GridPaginationModel,
   GridRowParams,
-  GridCallbackDetails
+  GridCallbackDetails,
+  GridToolbar
 } from '@mui/x-data-grid';
 import { Box } from '@mui/material';
 
@@ -27,6 +28,7 @@ interface CustomDataGridProps {
   autoHeight?: boolean;
   getRowId?: (row: any) => string | number;
   className?: string;
+  hideToolbar?: boolean;
 }
 
 const CustomDataGrid: React.FC<CustomDataGridProps> = ({
@@ -43,7 +45,8 @@ const CustomDataGrid: React.FC<CustomDataGridProps> = ({
   disableRowSelectionOnClick = false,
   autoHeight = true,
   getRowId,
-  className
+  className,
+  hideToolbar = false
 }) => {
   return (
     <DataGrid
@@ -61,6 +64,15 @@ const CustomDataGrid: React.FC<CustomDataGridProps> = ({
       loading={loading}
       getRowId={getRowId}
       className={className}
+      slots={{
+        toolbar: hideToolbar ? undefined : GridToolbar,
+      }}
+      slotProps={{
+        toolbar: {
+          showQuickFilter: true,
+          quickFilterProps: { debounceMs: 500 },
+        },
+      }}
       sx={{
         '& .MuiDataGrid-root': {
           border: 'none',
@@ -112,6 +124,15 @@ const CustomDataGrid: React.FC<CustomDataGridProps> = ({
         },
         '& .MuiCheckbox-root': {
           padding: '0px'
+        },
+        '& .MuiDataGrid-toolbarContainer': {
+          padding: '8px',
+          backgroundColor: '#f9fafb',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+        },
+        '& .MuiButton-root': {
+          textTransform: 'none',
         }
       }}
     />
