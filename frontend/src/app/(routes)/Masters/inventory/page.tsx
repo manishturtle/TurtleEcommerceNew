@@ -1,58 +1,49 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { useForm, Controller } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
-import PageTitle from '@/app/components/PageTitle';
-import DateRangePicker from '@/app/components/DateRangePicker';
-import Link from 'next/link';
 import { 
   Box, 
   Typography, 
+  TextField, 
   Button, 
   Grid, 
-  Card, 
-  CardContent, 
-  TextField,
-  InputAdornment,
-  Paper,
-  Chip,
-  IconButton,
+  Chip, 
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   FormControl,
-  FormHelperText,
-  MenuItem,
-  Select,
-  Stack,
-  Divider,
-  Switch,
+  FormLabel,
   FormControlLabel,
-  Tooltip,
-  Checkbox
+  InputAdornment,
+  MenuItem,
+  Checkbox,
+  Divider,
+  IconButton,
+  Tooltip
 } from '@mui/material';
 import { 
   DataGrid, 
   GridColDef, 
-  GridRenderCellParams,
-  GridRowId,
-  GridRowSelectionModel
+  GridRowSelectionModel,
+  GridPaginationModel
 } from '@mui/x-data-grid';
 import SearchIcon from '@mui/icons-material/Search';
 import FilterListIcon from '@mui/icons-material/FilterList';
-import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import AddIcon from '@mui/icons-material/Add';
-import FileDownloadIcon from '@mui/icons-material/FileDownload';
-import MoreVertIcon from '@mui/icons-material/MoreVert';
-import CloseIcon from '@mui/icons-material/Close';
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
-import InventoryStatsCard from '@/app/components/InventoryStatsCard';
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
+import CloseIcon from '@mui/icons-material/Close';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import { z } from 'zod';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import Link from 'next/link';
 import ContentCard from '@/app/components/ContentCard';
+import InventoryStatsCard from '@/app/components/InventoryStatsCard';
+import CustomDataGrid from '@/app/components/CustomDataGrid';
 
 // Define Zod schema for inventory item validation
 const inventoryItemSchema = z.object({
@@ -181,7 +172,7 @@ export default function InventoryPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
-  const [paginationModel, setPaginationModel] = useState({
+  const [paginationModel, setPaginationModel] = useState<GridPaginationModel>({
     pageSize: 5,
     page: 0
   });
@@ -190,7 +181,7 @@ export default function InventoryPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
   const [lotExpiryDateStr, setLotExpiryDateStr] = useState<string>('');
-  const [selectionModel, setSelectionModel] = useState<GridRowId[]>([]);
+  const [selectionModel, setSelectionModel] = useState<GridRowSelectionModel>([]);
 
   // Initialize react-hook-form with zod resolver
   const { 
@@ -501,7 +492,7 @@ export default function InventoryPage() {
   ], []);
 
   useEffect(() => {
-    const handleRowSelectionChange = (newSelectionModel: GridRowId[]) => {
+    const handleRowSelectionChange = (newSelectionModel: GridRowSelectionModel) => {
       setSelectionModel(newSelectionModel);
     };
 
@@ -629,7 +620,20 @@ export default function InventoryPage() {
               size="small"
               sx={{ 
                 flex: { xs: '1', sm: '1 1 300px' },
-                maxWidth: { sm: '300px' }
+                maxWidth: { sm: '300px' },
+                '& .MuiOutlinedInput-root': {
+                  bgcolor: 'background.paper',
+                  borderRadius: 1,
+                  '& fieldset': {
+                    borderColor: 'divider',
+                  },
+                  '&:hover fieldset': {
+                    borderColor: 'primary.main',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: 'primary.main',
+                  }
+                }
               }}
             />
             
@@ -646,7 +650,20 @@ export default function InventoryPage() {
               size="small"
               sx={{ 
                 flex: { xs: '1', sm: '1 1 300px' },
-                maxWidth: { sm: '300px' }
+                maxWidth: { sm: '300px' },
+                '& .MuiOutlinedInput-root': {
+                  bgcolor: 'background.paper',
+                  borderRadius: 1,
+                  '& fieldset': {
+                    borderColor: 'divider',
+                  },
+                  '&:hover fieldset': {
+                    borderColor: 'primary.main',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: 'primary.main',
+                  }
+                }
               }}
             />
           </Box>
@@ -654,7 +671,16 @@ export default function InventoryPage() {
           <Button 
             variant="outlined" 
             startIcon={<FilterListIcon />}
-            sx={{ color: 'text.secondary', borderColor: 'divider' }}
+            sx={{ 
+              color: 'text.secondary', 
+              borderColor: 'divider',
+              borderRadius: 1,
+              bgcolor: 'background.paper',
+              '&:hover': {
+                bgcolor: 'action.hover',
+                borderColor: 'primary.main'
+              }
+            }}
           >
             More Filters
           </Button>
@@ -670,7 +696,16 @@ export default function InventoryPage() {
               variant="outlined" 
               size="small" 
               startIcon={<FilterListIcon />}
-              sx={{ borderRadius: 1 }}
+              sx={{ 
+                borderRadius: 1,
+                bgcolor: 'background.paper',
+                borderColor: 'divider',
+                color: 'text.secondary',
+                '&:hover': {
+                  bgcolor: 'action.hover',
+                  borderColor: 'primary.main'
+                }
+              }}
             >
               Filter
             </Button>
@@ -678,7 +713,16 @@ export default function InventoryPage() {
               variant="outlined" 
               size="small" 
               startIcon={<FileDownloadIcon />}
-              sx={{ borderRadius: 1 }}
+              sx={{ 
+                borderRadius: 1,
+                bgcolor: 'background.paper',
+                borderColor: 'divider',
+                color: 'text.secondary',
+                '&:hover': {
+                  bgcolor: 'action.hover',
+                  borderColor: 'primary.main'
+                }
+              }}
             >
               Export
             </Button>
@@ -687,70 +731,10 @@ export default function InventoryPage() {
         sx={{
           '& .MuiDataGrid-root': {
             border: 'none',
-          },
-          '& .MuiDataGrid-cell': {
-            borderBottom: '1px solid',
-            borderColor: 'divider',
-            padding: '0px',
-          },
-          '& .MuiDataGrid-columnHeaders': {
-            backgroundColor: '#f9fafb',
-            borderBottom: '1px solid',
-            borderColor: 'divider',
-          },
-          '& .MuiDataGrid-virtualScroller': {
-            backgroundColor: '#fff',
-          },
-          '& .MuiDataGrid-columnHeaderCheckbox': {
-            '& .MuiDataGrid-columnHeaderTitleContainer': {
-              display: 'none'
-            }
-          },
-          '& .MuiDataGrid-checkboxInput': {
-            display: 'flex',
-            justifyContent: 'center'
-          },
-          '& .MuiDataGrid-cell:focus': {
-            outline: 'none',
-          },
-          '& .MuiDataGrid-row:hover': {
-            backgroundColor: 'rgba(0, 0, 0, 0.04)',
-          },
-          '& .MuiDataGrid-columnHeader': {
-            color: 'text.secondary',
-            fontWeight: 600,
-            fontSize: '0.875rem',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em'
-          },
-          '& .MuiDataGrid-cell': {
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 0
-          },
-          '& .MuiDataGrid-footerContainer': {
-            borderTop: '1px solid',
-            borderColor: 'divider',
-          },
-          '& .MuiDataGrid-columnHeaderCheckbox .MuiDataGrid-columnHeaderTitleContainer': {
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            paddingTop: '0px'
-          },
-          '& .MuiDataGrid-checkboxInput': {
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            paddingTop: '2px'
-          },
-          '& .MuiCheckbox-root': {
-            padding: '0px'
           }
         }}
       >
-        <DataGrid
+        <CustomDataGrid
           rows={filteredItems}
           columns={columns}
           paginationModel={paginationModel}
@@ -763,34 +747,6 @@ export default function InventoryPage() {
           onRowSelectionModelChange={(newSelectionModel: GridRowSelectionModel) => {
             // Convert readonly array to mutable array
             setSelectionModel([...newSelectionModel]);
-          }}
-          sx={{
-            '& .MuiDataGrid-cell:focus': {
-              outline: 'none',
-            },
-            '& .MuiDataGrid-row:hover': {
-              backgroundColor: 'rgba(0, 0, 0, 0.04)',
-            },
-            '& .MuiDataGrid-columnHeader': {
-              color: 'text.secondary',
-              fontWeight: 600,
-              fontSize: '0.875rem',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em'
-            },
-            '& .MuiDataGrid-cell': {
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 0
-            },
-            '& .MuiDataGrid-footerContainer': {
-              borderTop: '1px solid',
-              borderColor: 'divider',
-            },
-            '& .MuiDataGrid-columnHeaderCheckbox .MuiDataGrid-columnHeaderTitleContainer': {
-              display: 'block'
-            }
           }}
         />
       </ContentCard>
