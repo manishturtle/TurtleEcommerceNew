@@ -209,10 +209,10 @@ export default function AddInventoryPage() {
       }}>
         <Box>
           <Typography variant="h5" component="h1" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-            Add Inventory
+            Add Adjustment
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Add or adjust inventory items
+            Adjust inventory quantities and manage lot information
           </Typography>
         </Box>
         <Button
