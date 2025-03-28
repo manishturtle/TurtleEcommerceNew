@@ -1,13 +1,18 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Box, 
-  Typography, 
-  TextField, 
   Button, 
+  TextField, 
   Grid, 
-  Chip, 
+  Typography, 
+  IconButton, 
+  InputAdornment, 
+  MenuItem,
+  Divider,
+  Switch,
+  Chip,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -15,27 +20,29 @@ import {
   FormControl,
   FormLabel,
   FormControlLabel,
-  InputAdornment,
-  MenuItem,
   Checkbox,
-  Divider,
-  IconButton,
   Tooltip
 } from '@mui/material';
 import { 
   DataGrid, 
   GridColDef, 
+  GridValueGetterParams, 
+  GridRenderCellParams, 
   GridRowSelectionModel,
-  GridPaginationModel
+  GridPaginationModel,
+  GridToolbarContainer,
+  GridToolbarExport,
+  GridToolbarQuickFilter
 } from '@mui/x-data-grid';
-import SearchIcon from '@mui/icons-material/Search';
-import FilterListIcon from '@mui/icons-material/FilterList';
 import AddIcon from '@mui/icons-material/Add';
+import SearchIcon from '@mui/icons-material/Search';
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
+import ViewListIcon from '@mui/icons-material/ViewList';
+import GridViewIcon from '@mui/icons-material/GridView';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
-import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import CloseIcon from '@mui/icons-material/Close';
-import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import { z } from 'zod';
 import { useForm, Controller } from 'react-hook-form';
@@ -69,7 +76,6 @@ type InventoryItemFormData = z.infer<typeof inventoryItemSchema>;
 function CustomToolbar() {
   return (
     <GridToolbarContainer>
-      <GridToolbarFilterButton />
       <GridToolbarExport />
       <GridToolbarQuickFilter debounceMs={500} />
     </GridToolbarContainer>
@@ -172,6 +178,8 @@ export default function InventoryPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
+  const [showSearch, setShowSearch] = useState(false);
+  const [dateFilter, setDateFilter] = useState('This Week');
   const [paginationModel, setPaginationModel] = useState<GridPaginationModel>({
     pageSize: 5,
     page: 0
@@ -182,6 +190,7 @@ export default function InventoryPage() {
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
   const [lotExpiryDateStr, setLotExpiryDateStr] = useState<string>('');
   const [selectionModel, setSelectionModel] = useState<GridRowSelectionModel>([]);
+  const [view, setView] = useState('grid');
 
   // Initialize react-hook-form with zod resolver
   const { 
@@ -214,27 +223,58 @@ export default function InventoryPage() {
   useEffect(() => {
     const filtered = inventoryItems.filter(item => {
       const matchesSearch = 
-        item.product.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.location.toLowerCase().includes(searchTerm.toLowerCase());
+        Object.values(item).some(value => 
+          value !== null && 
+          value !== undefined && 
+          value.toString().toLowerCase().includes(searchTerm.toLowerCase())
+        );
       
-      // Add date filtering logic here if needed
+      // Add date filtering logic based on dateFilter
+      let dateFilterPassed = true;
+      if (dateFilter && item.expiryDate) {
+        const expiryDate = new Date(item.expiryDate);
+        const today = new Date();
+        
+        switch(dateFilter) {
+          case 'This Week':
+            const endOfWeek = new Date(today);
+            endOfWeek.setDate(today.getDate() + (7 - today.getDay()));
+            dateFilterPassed = expiryDate <= endOfWeek;
+            break;
+          case 'Last Week':
+            const startOfLastWeek = new Date(today);
+            startOfLastWeek.setDate(today.getDate() - today.getDay() - 7);
+            const endOfLastWeek = new Date(today);
+            endOfLastWeek.setDate(today.getDate() - today.getDay() - 1);
+            dateFilterPassed = expiryDate >= startOfLastWeek && expiryDate <= endOfLastWeek;
+            break;
+          case 'This Month':
+            const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            dateFilterPassed = expiryDate <= endOfMonth;
+            break;
+          case 'Last Month':
+            const startOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+            const endOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+            dateFilterPassed = expiryDate >= startOfLastMonth && expiryDate <= endOfLastMonth;
+            break;
+          // Custom range would be handled separately
+        }
+      }
       
-      return matchesSearch;
+      return matchesSearch && dateFilterPassed;
     });
     
     setFilteredItems(filtered);
-  }, [searchTerm, inventoryItems, startDate, endDate]);
+  }, [searchTerm, inventoryItems, dateFilter]);
 
   // Handle search input change
   const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(event.target.value);
   };
 
-  // Handle date range change
-  const handleDateRangeChange = (start: Date | null, end: Date | null) => {
-    setStartDate(start);
-    setEndDate(end);
+  // Handle date filter change
+  const handleDateFilterChange = (event: React.ChangeEvent<{ value: unknown }>) => {
+    setDateFilter(event.target.value as string);
   };
 
   // Open form dialog
@@ -501,6 +541,11 @@ export default function InventoryPage() {
     };
   }, []);
 
+  // Handle view mode change
+  const handleViewChange = (newView: 'list' | 'grid') => {
+    setView(newView);
+  };
+
   return (
     <Box sx={{ 
       // bgcolor: '#f9fafb', 
@@ -591,141 +636,80 @@ export default function InventoryPage() {
       </Grid>
 
       {/* Search and filter section */}
-      <ContentCard sx={{ mb: 3 }}>
-        <Box sx={{ 
-          display: 'flex',
-          flexDirection: { xs: 'column', sm: 'row' },
-          justifyContent: 'space-between',
-          alignItems: { xs: 'flex-start', sm: 'center' },
-          gap: 2
-        }}>
-          <Box sx={{ 
-            display: 'flex', 
-            flexDirection: { xs: 'column', sm: 'row' },
-            gap: 2,
-            width: { xs: '100%', sm: 'auto' }
-          }}>
-            <TextField
-              placeholder="Search inventory..."
-              value={searchTerm}
-              onChange={handleSearchChange}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon />
-                  </InputAdornment>
-                )
-              }}
-              variant="outlined"
-              size="small"
-              sx={{ 
-                flex: { xs: '1', sm: '1 1 300px' },
-                maxWidth: { sm: '300px' },
-                '& .MuiOutlinedInput-root': {
-                  bgcolor: 'background.paper',
-                  borderRadius: 1,
-                  '& fieldset': {
-                    borderColor: 'divider',
-                  },
-                  '&:hover fieldset': {
-                    borderColor: 'primary.main',
-                  },
-                  '&.Mui-focused fieldset': {
-                    borderColor: 'primary.main',
-                  }
-                }
-              }}
-            />
-            
-            <TextField
-              placeholder="01/01/2025 - 12/31/2025"
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <CalendarTodayIcon />
-                  </InputAdornment>
-                )
-              }}
-              variant="outlined"
-              size="small"
-              sx={{ 
-                flex: { xs: '1', sm: '1 1 300px' },
-                maxWidth: { sm: '300px' },
-                '& .MuiOutlinedInput-root': {
-                  bgcolor: 'background.paper',
-                  borderRadius: 1,
-                  '& fieldset': {
-                    borderColor: 'divider',
-                  },
-                  '&:hover fieldset': {
-                    borderColor: 'primary.main',
-                  },
-                  '&.Mui-focused fieldset': {
-                    borderColor: 'primary.main',
-                  }
-                }
-              }}
-            />
-          </Box>
-          
-          <Button 
-            variant="outlined" 
-            startIcon={<FilterListIcon />}
-            sx={{ 
-              color: 'text.secondary', 
-              borderColor: 'divider',
-              borderRadius: 1,
-              bgcolor: 'background.paper',
-              '&:hover': {
-                bgcolor: 'action.hover',
-                borderColor: 'primary.main'
-              }
-            }}
-          >
-            More Filters
-          </Button>
-        </Box>
-      </ContentCard>
-
+   
       {/* Data grid */}
       <ContentCard
         title="Inventory Items"
         action={
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button 
-              variant="outlined" 
-              size="small" 
-              startIcon={<FilterListIcon />}
-              sx={{ 
-                borderRadius: 1,
-                bgcolor: 'background.paper',
-                borderColor: 'divider',
-                color: 'text.secondary',
-                '&:hover': {
-                  bgcolor: 'action.hover',
-                  borderColor: 'primary.main'
-                }
-              }}
-            >
-              Filter
-            </Button>
-            <Button 
-              variant="outlined" 
-              size="small" 
-              startIcon={<FileDownloadIcon />}
-              sx={{ 
-                borderRadius: 1,
-                bgcolor: 'background.paper',
-                borderColor: 'divider',
-                color: 'text.secondary',
-                '&:hover': {
-                  bgcolor: 'action.hover',
-                  borderColor: 'primary.main'
-                }
-              }}
-            >
-              Export
-            </Button>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <IconButton
+                size="small"
+                onClick={() => setShowSearch(!showSearch)}
+                sx={{ color: 'text.secondary' }}
+              >
+                <SearchIcon fontSize="small" />
+              </IconButton>
+              {showSearch && (
+                <TextField
+                  size="small"
+                  placeholder="Search"
+                  value={searchTerm}
+                  onChange={handleSearchChange}
+                  sx={{ ml: 1, width: 200 }}
+                />
+              )}
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <IconButton
+                  size="small"
+                  onClick={() => handleViewChange('list')}
+                  sx={{ 
+                    color: view === 'list' ? 'primary.main' : 'text.secondary',
+                    bgcolor: view === 'list' ? 'action.hover' : 'transparent'
+                  }}
+                >
+                  <ViewListIcon fontSize="small" />
+                </IconButton>
+                <IconButton
+                  size="small"
+                  onClick={() => handleViewChange('grid')}
+                  sx={{ 
+                    color: view === 'grid' ? 'primary.main' : 'text.secondary',
+                    bgcolor: view === 'grid' ? 'action.hover' : 'transparent'
+                  }}
+                >
+                  <GridViewIcon fontSize="small" />
+                </IconButton>
+                <TextField
+                  select
+                  size="small"
+                  value={dateFilter}
+                  variant="standard"
+                  InputProps={{
+                    disableUnderline: true,
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <CalendarTodayIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+                      </InputAdornment>
+                    ),
+                  }}
+                  sx={{ 
+                    ml: 1,
+                    '& .MuiSelect-select': {
+                      py: 0,
+                      fontSize: '0.875rem',
+                    }
+                  }}
+                  onChange={handleDateFilterChange}
+                >
+                  <MenuItem value="This Week">This Week</MenuItem>
+                  <MenuItem value="Last Week">Last Week</MenuItem>
+                  <MenuItem value="This Month">This Month</MenuItem>
+                  <MenuItem value="Last Month">Last Month</MenuItem>
+                  <MenuItem value="Custom Range">Custom Range</MenuItem>
+                </TextField>
+              </Box>
+            </Box>
           </Box>
         }
         sx={{
@@ -748,6 +732,8 @@ export default function InventoryPage() {
             // Convert readonly array to mutable array
             setSelectionModel([...newSelectionModel]);
           }}
+          hideToolbar={false}
+          viewMode={view as 'list' | 'grid'}
         />
       </ContentCard>
 

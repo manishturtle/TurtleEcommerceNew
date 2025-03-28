@@ -6,9 +6,84 @@ import {
   GridPaginationModel,
   GridRowParams,
   GridCallbackDetails,
-  GridToolbar
+  GridToolbarColumnsButton,
+  GridToolbarFilterButton,
+  GridToolbarDensitySelector,
+  GridToolbarExportContainer,
+  GridCsvExportMenuItem,
+  GridPrintExportMenuItem,
+  GridExportMenuItemProps
 } from '@mui/x-data-grid';
-import { Box } from '@mui/material';
+import { Box, Button, Divider } from '@mui/material';
+import ViewColumnIcon from '@mui/icons-material/ViewColumn';
+import FilterListIcon from '@mui/icons-material/FilterList';
+import DensityMediumIcon from '@mui/icons-material/DensityMedium';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
+
+// Custom toolbar component
+// function CustomToolbar() {
+//   return (
+//     <Box
+//       sx={{
+//         p: 1,
+//         display: 'flex',
+//         justifyContent: 'flex-end',
+//         alignItems: 'center',
+//         borderBottom: '1px solid',
+//         borderColor: 'divider',
+//         backgroundColor: '#f9fafb',
+//       }}
+//     >
+//       <Button
+//         size="small"
+//         startIcon={<ViewColumnIcon />}
+//         sx={{ 
+//           textTransform: 'none',
+//           mr: 1,
+//           color: 'text.secondary'
+//         }}
+//         component={GridToolbarColumnsButton}
+//       >
+//         Columns
+//       </Button>
+//       <Button
+//         size="small"
+//         startIcon={<FilterListIcon />}
+//         sx={{ 
+//           textTransform: 'none',
+//           mr: 1,
+//           color: 'text.secondary'
+//         }}
+//         component={GridToolbarFilterButton}
+//       >
+//         Filters
+//       </Button>
+//       <Button
+//         size="small"
+//         startIcon={<DensityMediumIcon />}
+//         sx={{ 
+//           textTransform: 'none',
+//           mr: 1,
+//           color: 'text.secondary'
+//         }}
+//         component={GridToolbarDensitySelector}
+//       >
+//         Density
+//       </Button>
+//       <GridToolbarExportContainer
+//         component={Button}
+//         size="small"
+//         startIcon={<FileDownloadIcon />}
+//         sx={{ 
+//           textTransform: 'none',
+//           color: 'text.secondary'
+//         }}
+//       >
+//         Export
+//       </GridToolbarExportContainer>
+//     </Box>
+//   );
+// }
 
 interface CustomDataGridProps {
   rows: any[];
@@ -29,6 +104,7 @@ interface CustomDataGridProps {
   getRowId?: (row: any) => string | number;
   className?: string;
   hideToolbar?: boolean;
+  viewMode?: 'list' | 'grid';
 }
 
 const CustomDataGrid: React.FC<CustomDataGridProps> = ({
@@ -46,8 +122,12 @@ const CustomDataGrid: React.FC<CustomDataGridProps> = ({
   autoHeight = true,
   getRowId,
   className,
-  hideToolbar = false
+  hideToolbar = false,
+  viewMode = 'grid'
 }) => {
+  // Adjust density based on view mode
+  const density = viewMode === 'list' ? 'compact' : 'standard';
+  
   return (
     <DataGrid
       rows={rows}
@@ -64,15 +144,10 @@ const CustomDataGrid: React.FC<CustomDataGridProps> = ({
       loading={loading}
       getRowId={getRowId}
       className={className}
-      slots={{
-        toolbar: hideToolbar ? undefined : GridToolbar,
-      }}
-      slotProps={{
-        toolbar: {
-          showQuickFilter: true,
-          quickFilterProps: { debounceMs: 500 },
-        },
-      }}
+      // slots={{
+      //   toolbar: hideToolbar ? undefined : CustomToolbar,
+      // }}
+      density={density}
       sx={{
         '& .MuiDataGrid-root': {
           border: 'none',
@@ -80,10 +155,10 @@ const CustomDataGrid: React.FC<CustomDataGridProps> = ({
         '& .MuiDataGrid-cell': {
           borderBottom: '1px solid',
           borderColor: 'divider',
-          padding: '0px',
+          padding: viewMode === 'list' ? '4px 16px' : '0px',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
+          justifyContent: viewMode === 'list' ? 'flex-start' : 'center',
         },
         '& .MuiDataGrid-columnHeaders': {
           backgroundColor: '#f9fafb',
@@ -124,15 +199,6 @@ const CustomDataGrid: React.FC<CustomDataGridProps> = ({
         },
         '& .MuiCheckbox-root': {
           padding: '0px'
-        },
-        '& .MuiDataGrid-toolbarContainer': {
-          padding: '8px',
-          backgroundColor: '#f9fafb',
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-        },
-        '& .MuiButton-root': {
-          textTransform: 'none',
         }
       }}
     />
