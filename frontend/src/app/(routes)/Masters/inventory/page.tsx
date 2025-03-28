@@ -63,6 +63,8 @@ import ReportProblemIcon from '@mui/icons-material/ReportProblem';
 import NumbersIcon from '@mui/icons-material/Numbers';
 import SummarizeIcon from '@mui/icons-material/Summarize';
 import SaveIcon from '@mui/icons-material/Save';
+import FullscreenIcon from '@mui/icons-material/Fullscreen';
+import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import { z } from 'zod';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -832,6 +834,8 @@ export default function InventoryPage() {
     setView(newView);
   };
 
+  const [drawerWidth, setDrawerWidth] = useState(550);
+
   return (
     <Box sx={{ 
       // bgcolor: '#f9fafb', 
@@ -1112,7 +1116,7 @@ export default function InventoryPage() {
         onClose={handleCloseForm}
         sx={{
           '& .MuiDrawer-paper': { 
-            width: { xs: '100%', sm: '550px' },
+            width: drawerWidth,
             maxWidth: '100%',
             p: 0
           },
@@ -1131,15 +1135,18 @@ export default function InventoryPage() {
             borderBottom: '1px solid',
             borderColor: 'divider'
           }}>
-            <Typography variant="h6">
-              Add Inventory
-            </Typography>
-            <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <Typography variant="h6">
+                Add Adjustment
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
               <Button 
                 variant="contained" 
                 color="primary"
                 onClick={handleAdjustmentSubmit(onAdjustmentSubmit)}
-                startIcon={<CheckCircleIcon />}
+                startIcon={<SaveIcon />}
+                size="small"
                 disabled={isSubmittingAdjustment || isAdjustmentSubmitting}
                 sx={{ 
                   bgcolor: '#003366',
@@ -1148,10 +1155,23 @@ export default function InventoryPage() {
                   }
                 }}
               >
-                Save Changes
+                Save
               </Button>
-              <IconButton onClick={handleCloseForm} size="small" sx={{ ml: 1 }}>
-                <CloseIcon />
+              <IconButton 
+                size="small" 
+                onClick={() => setDrawerWidth(drawerWidth === 550 ? 800 : 550)} 
+                sx={{ ml: 1 }}
+                title={drawerWidth === 550 ? "Expand drawer" : "Collapse drawer"}
+              >
+                {drawerWidth === 550 ? <FullscreenIcon fontSize="small" /> : <FullscreenExitIcon fontSize="small" />}
+              </IconButton>
+              <IconButton 
+                size="small" 
+                onClick={handleCloseForm} 
+                sx={{ ml: 0.5 }}
+                title="Close drawer"
+              >
+                <CloseIcon fontSize="small" />
               </IconButton>
             </Box>
           </Box>
@@ -1169,11 +1189,13 @@ export default function InventoryPage() {
             
             <form id="adjustment-form" onSubmit={handleAdjustmentSubmit(onAdjustmentSubmit)}>
               {/* Product & Location Details */}
-              <Box sx={{ mb: 4 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
                     Add Adjustment
                   </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
                   <Button 
                     variant="contained" 
                     color="primary"
@@ -1190,74 +1212,90 @@ export default function InventoryPage() {
                   >
                     Save
                   </Button>
+                  <IconButton 
+                    size="small" 
+                    onClick={() => setDrawerWidth(drawerWidth === 550 ? 800 : 550)} 
+                    sx={{ ml: 1 }}
+                    title={drawerWidth === 550 ? "Expand drawer" : "Collapse drawer"}
+                  >
+                    {drawerWidth === 550 ? <FullscreenIcon fontSize="small" /> : <FullscreenExitIcon fontSize="small" />}
+                  </IconButton>
+                  <IconButton 
+                    size="small" 
+                    onClick={handleCloseForm} 
+                    sx={{ ml: 0.5 }}
+                    title="Close drawer"
+                  >
+                    <CloseIcon fontSize="small" />
+                  </IconButton>
                 </Box>
-                <Grid container spacing={3}>
-                  <Grid item xs={12}>
-                    <Controller
-                      name="product"
-                      control={adjustmentControl}
-                      render={({ field }) => (
-                        <FormControl error={!!adjustmentErrors.product} fullWidth>
-                          <TextField
-                            {...field}
-                            label="Product *"
-                            variant="outlined"
-                            error={!!adjustmentErrors.product}
-                            helperText={adjustmentErrors.product?.message}
-                            placeholder="Search product by name or SKU"
-                            InputProps={{
-                              startAdornment: (
-                                <InputAdornment position="start">
-                                  <InventoryIcon color="action" />
-                                </InputAdornment>
-                              ),
-                              endAdornment: (
-                                <InputAdornment position="end">
-                                  <SearchIcon />
-                                </InputAdornment>
-                              ),
-                            }}
-                          />
-                        </FormControl>
-                      )}
-                    />
-                  </Grid>
-                  
-                  <Grid item xs={12}>
-                    <Controller
-                      name="location"
-                      control={adjustmentControl}
-                      render={({ field }) => (
-                        <FormControl error={!!adjustmentErrors.location} fullWidth>
-                          <TextField
-                            {...field}
-                            select
-                            label="Location *"
-                            variant="outlined"
-                            error={!!adjustmentErrors.location}
-                            helperText={adjustmentErrors.location?.message}
-                            disabled={isLoadingLocations}
-                            InputProps={{
-                              startAdornment: (
-                                <InputAdornment position="start">
-                                  <LocationOnIcon color="action" />
-                                </InputAdornment>
-                              ),
-                            }}
-                          >
-                            <MenuItem value="">Select location</MenuItem>
-                            {locations.map((location) => (
-                              <MenuItem key={location.id} value={location.id.toString()}>
-                                {location.name}
-                              </MenuItem>
-                            ))}
-                          </TextField>
-                        </FormControl>
-                      )}
-                    />
-                  </Grid>
-                </Grid>
               </Box>
+              <Grid container spacing={3}>
+                <Grid item xs={12}>
+                  <Controller
+                    name="product"
+                    control={adjustmentControl}
+                    render={({ field }) => (
+                      <FormControl error={!!adjustmentErrors.product} fullWidth>
+                        <TextField
+                          {...field}
+                          label="Product *"
+                          variant="outlined"
+                          error={!!adjustmentErrors.product}
+                          helperText={adjustmentErrors.product?.message}
+                          placeholder="Search product by name or SKU"
+                          InputProps={{
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <InventoryIcon color="action" />
+                              </InputAdornment>
+                            ),
+                            endAdornment: (
+                              <InputAdornment position="end">
+                                <SearchIcon />
+                              </InputAdornment>
+                            ),
+                          }}
+                        />
+                      </FormControl>
+                    )}
+                  />
+                </Grid>
+                
+                <Grid item xs={12}>
+                  <Controller
+                    name="location"
+                    control={adjustmentControl}
+                    render={({ field }) => (
+                      <FormControl error={!!adjustmentErrors.location} fullWidth>
+                        <TextField
+                          {...field}
+                          select
+                          label="Location *"
+                          variant="outlined"
+                          error={!!adjustmentErrors.location}
+                          helperText={adjustmentErrors.location?.message}
+                          disabled={isLoadingLocations}
+                          InputProps={{
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <LocationOnIcon color="action" />
+                              </InputAdornment>
+                            ),
+                          }}
+                        >
+                          <MenuItem value="">Select location</MenuItem>
+                          {locations.map((location) => (
+                            <MenuItem key={location.id} value={location.id.toString()}>
+                              {location.name}
+                            </MenuItem>
+                          ))}
+                        </TextField>
+                      </FormControl>
+                    )}
+                  />
+                </Grid>
+              </Grid>
               
               {/* Inventory Details */}
               <Box sx={{ mb: 4 }}>
