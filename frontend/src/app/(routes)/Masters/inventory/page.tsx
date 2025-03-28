@@ -13,7 +13,7 @@ import {
   Divider,
   Switch,
   Chip,
-  Dialog,
+  Drawer,
   DialogTitle,
   DialogContent,
   DialogActions,
@@ -22,7 +22,12 @@ import {
   FormControlLabel,
   Checkbox,
   Tooltip,
-  Popover
+  Popover,
+  Paper,
+  Card,
+  CardContent,
+  Alert,
+  CircularProgress
 } from '@mui/material';
 import { 
   DataGrid, 
@@ -47,6 +52,17 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import FilterListIcon from '@mui/icons-material/FilterList';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import InfoIcon from '@mui/icons-material/Info';
+import InventoryIcon from '@mui/icons-material/Inventory';
+import LocationOnIcon from '@mui/icons-material/LocationOn';
+import QrCodeIcon from '@mui/icons-material/QrCode';
+import EventIcon from '@mui/icons-material/Event';
+import SwapVertIcon from '@mui/icons-material/SwapVert';
+import ReportProblemIcon from '@mui/icons-material/ReportProblem';
+import NumbersIcon from '@mui/icons-material/Numbers';
+import SummarizeIcon from '@mui/icons-material/Summarize';
+import SaveIcon from '@mui/icons-material/Save';
 import { z } from 'zod';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -54,6 +70,9 @@ import Link from 'next/link';
 import ContentCard from '@/app/components/ContentCard';
 import InventoryStatsCard from '@/app/components/InventoryStatsCard';
 import CustomDataGrid from '@/app/components/CustomDataGrid';
+import { useAdjustmentReasons } from '@/app/hooks/useAdjustmentReasons';
+import { useAdjustmentTypes } from '@/app/hooks/useAdjustmentTypes';
+import { fetchCurrentStock, createInventoryAdjustment, fetchLocations, fetchInventoryItems, FulfillmentLocation } from '@/app/services/api';
 
 // Define Zod schema for inventory item validation
 const inventoryItemSchema = z.object({
@@ -72,8 +91,21 @@ const inventoryItemSchema = z.object({
   customer: z.string().optional(),
 });
 
+// Define Zod schema for inventory adjustment validation
+const inventoryAdjustmentSchema = z.object({
+  product: z.string().min(1, 'Product is required'),
+  location: z.string().min(1, 'Location is required'),
+  serialLotNumber: z.string().optional(),
+  expiryDate: z.string().optional(),
+  adjustmentType: z.string().min(1, 'Adjustment type is required'),
+  reason: z.string().min(1, 'Reason is required'),
+  quantity: z.string().min(1, 'Quantity is required'),
+  notes: z.string().optional()
+});
+
 // TypeScript type derived from Zod schema
 type InventoryItemFormData = z.infer<typeof inventoryItemSchema>;
+type InventoryAdjustmentFormData = z.infer<typeof inventoryAdjustmentSchema>;
 
 // Custom toolbar component
 function CustomToolbar() {
@@ -195,17 +227,54 @@ export default function InventoryPage() {
   const [filteredItems, setFilteredItems] = useState<InventoryItem[]>(mockInventoryItems);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
-  const [lotExpiryDateStr, setLotExpiryDateStr] = useState<string>('');
   const [selectionModel, setSelectionModel] = useState<GridRowSelectionModel>([]);
   const [loading, setLoading] = useState(false);
+  
+  // State for locations
+  const [locations, setLocations] = useState<FulfillmentLocation[]>([]);
+  const [isLoadingLocations, setIsLoadingLocations] = useState(false);
+  const [locationsError, setLocationsError] = useState<string | null>(null);
+  
+  // State for current stock
+  const [currentStock, setCurrentStock] = useState({
+    id: 0,
+    stockQuantity: 1250,
+    reservedQuantity: 50,
+    availableQuantity: 0,
+    nonSaleable: 10,
+    onOrder: 200,
+    inTransit: 75,
+    returned: 5,
+    onHold: 25,
+    backorder: 100
+  });
+  
+  // State for loading and error handling
+  const [isLoadingStock, setIsLoadingStock] = useState(false);
+  const [stockError, setStockError] = useState<string | null>(null);
+  const [isSubmittingAdjustment, setIsSubmittingAdjustment] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  
+  // Use the adjustment reasons hook
+  const { reasons, isLoading: isLoadingReasons, error: reasonsError } = useAdjustmentReasons();
+  const { adjustmentTypes, isLoading: isLoadingTypes } = useAdjustmentTypes();
+  
+  // Mock locations data for development
+  const mockLocations: FulfillmentLocation[] = [
+    { id: 1, name: 'Warehouse A', code: 'WH-A', type: 'WAREHOUSE', is_active: true },
+    { id: 2, name: 'Warehouse B', code: 'WH-B', type: 'WAREHOUSE', is_active: true },
+    { id: 3, name: 'Store Location 1', code: 'ST-1', type: 'STORE', is_active: true },
+    { id: 4, name: 'Distribution Center', code: 'DC-1', type: 'DISTRIBUTION', is_active: true },
+    { id: 5, name: 'Returns Processing', code: 'RP-1', type: 'RETURNS', is_active: true }
+  ];
 
   // Initialize react-hook-form with zod resolver
   const { 
     control, 
     handleSubmit, 
-    reset, 
     watch, 
-    formState: { errors, isSubmitting } 
+    reset, 
+    formState: { errors } 
   } = useForm<InventoryItemFormData>({
     resolver: zodResolver(inventoryItemSchema),
     defaultValues: {
@@ -222,9 +291,156 @@ export default function InventoryPage() {
       customer: ''
     }
   });
+  
+  // Initialize react-hook-form with zod resolver for the adjustment form
+  const {
+    control: adjustmentControl,
+    handleSubmit: handleAdjustmentSubmit,
+    watch: watchAdjustment,
+    reset: resetAdjustment,
+    formState: { errors: adjustmentErrors, isSubmitting: isAdjustmentSubmitting }
+  } = useForm<InventoryAdjustmentFormData>({
+    resolver: zodResolver(inventoryAdjustmentSchema),
+    defaultValues: {
+      product: '',
+      location: '',
+      adjustmentType: '',
+      quantity: '',
+      reason: '',
+      serialLotNumber: '',
+      expiryDate: '',
+      notes: ''
+    }
+  });
+  
+  // Get form values for calculations
+  const adjustmentType = watchAdjustment('adjustmentType');
+  const quantityStr = watchAdjustment('quantity');
+  const productId = watchAdjustment('product');
+  const locationId = watchAdjustment('location');
+  
+  // Calculate adjustment quantity based on type and value
+  const quantity = parseFloat(quantityStr) || 0;
+  const adjustmentQuantity = 
+    adjustmentType === 'ADD' ? quantity :
+    adjustmentType === 'REMOVE' ? -quantity :
+    0; // Default to 0 if no type selected
+  
+  // Calculate new stock level based on current stock and adjustment quantity
+  const newStockLevel = currentStock.stockQuantity + adjustmentQuantity;
 
-  // Watch the lotTracked field to conditionally show lot management fields
-  const lotTracked = watch('lotTracked');
+  // Fetch locations when component mounts
+  useEffect(() => {
+    const getLocations = async () => {
+      try {
+        setIsLoadingLocations(true);
+        setLocationsError(null);
+        
+        // Use the actual API call
+        const response = await fetchLocations({ is_active: true });
+        setLocations(response.results);
+      } catch (error) {
+        console.error('Error fetching locations:', error);
+        setLocationsError('Failed to load locations');
+        
+        // Fallback to mock data if API fails
+        setLocations(mockLocations);
+      } finally {
+        setIsLoadingLocations(false);
+      }
+    };
+    
+    getLocations();
+  }, []);
+
+  // Fetch current stock when product and location change
+  useEffect(() => {
+    const fetchStock = async () => {
+      if (!productId || !locationId) return;
+      
+      try {
+        setIsLoadingStock(true);
+        setStockError(null);
+        
+        // Use fetchInventoryItems API to get current quantities
+        const response = await fetchInventoryItems({ 
+          product: parseInt(productId), 
+          location: parseInt(locationId)
+        });
+        
+        const stock = response.results.length > 0 ? response.results[0] : null;
+        
+        if (stock) {
+          setCurrentStock({
+            id: stock.id,
+            stockQuantity: stock.stock_quantity || 0,
+            reservedQuantity: stock.reserved_quantity || 0,
+            availableQuantity: stock.available_to_promise || 0,
+            nonSaleable: stock.non_saleable_quantity || 0,
+            onOrder: stock.on_order_quantity || 0,
+            inTransit: stock.in_transit_quantity || 0,
+            returned: stock.returned_quantity || 0,
+            onHold: stock.hold_quantity || 0,
+            backorder: stock.backorder_quantity || 0
+          });
+        } else {
+          // Reset to default values if no stock found
+          setCurrentStock({
+            id: 0,
+            stockQuantity: 0,
+            reservedQuantity: 0,
+            availableQuantity: 0,
+            nonSaleable: 0,
+            onOrder: 0,
+            inTransit: 0,
+            returned: 0,
+            onHold: 0,
+            backorder: 0
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching stock:', error);
+        setStockError('Failed to load current stock');
+      } finally {
+        setIsLoadingStock(false);
+      }
+    };
+    
+    fetchStock();
+  }, [productId, locationId]);
+  
+  // Handle form submission
+  const onAdjustmentSubmit = async (data: InventoryAdjustmentFormData) => {
+    try {
+      setIsSubmittingAdjustment(true);
+      setSubmitError(null);
+      
+      // Create the adjustment
+      await createInventoryAdjustment({
+        product: parseInt(data.product),
+        location: parseInt(data.location),
+        adjustment_type: data.adjustmentType,
+        quantity: parseFloat(data.quantity),
+        reason: parseInt(data.reason),
+        lot_number: data.serialLotNumber || null,
+        expiry_date: data.expiryDate || null,
+        notes: data.notes || ''
+      });
+      
+      // Close the form and reset
+      setIsFormOpen(false);
+      resetAdjustment();
+      
+      // Refresh inventory items
+      // TODO: Implement refreshing inventory items after adjustment
+      
+    } catch (error) {
+      console.error('Error creating adjustment:', error);
+      setSubmitError('Failed to create inventory adjustment');
+    } finally {
+      setIsSubmittingAdjustment(false);
+    }
+  };
 
   // Filter items based on search term
   useEffect(() => {
@@ -358,13 +574,6 @@ export default function InventoryPage() {
       const itemToEdit = inventoryItems.find(item => item.id === itemId);
       
       if (itemToEdit) {
-        // Set expiry date string for the date picker
-        if (itemToEdit.expiryDate) {
-          setLotExpiryDateStr(itemToEdit.expiryDate);
-        } else {
-          setLotExpiryDateStr('');
-        }
-        
         // Reset form with existing item data
         reset({
           product: itemToEdit.product,
@@ -381,23 +590,19 @@ export default function InventoryPage() {
         });
       }
     } else {
-      // Add new item
+      // Add new adjustment
       setEditingItemId(null);
-      setLotExpiryDateStr('');
       
-      // Reset form with default values
-      reset({
+      // Reset adjustment form with default values
+      resetAdjustment({
         product: '',
-        sku: '',
         location: '',
-        availableQuantity: '',
-        status: 'Active',
-        lotTracked: false,
-        lotNumber: '',
+        adjustmentType: '',
+        quantity: '',
+        reason: '',
+        serialLotNumber: '',
         expiryDate: '',
-        lotStrategy: 'FIFO',
-        costPricePerUnit: '',
-        customer: ''
+        notes: ''
       });
     }
     
@@ -665,8 +870,7 @@ export default function InventoryPage() {
           <Button 
             variant="contained" 
             startIcon={<AddIcon />}
-            component={Link}
-            href="/Masters/inventory/add"
+            onClick={() => handleOpenForm()}
             sx={{ 
               flex: { xs: 1, sm: 'none' },
               bgcolor: '#003366',
@@ -901,188 +1105,193 @@ export default function InventoryPage() {
         />
       </ContentCard>
 
-      {/* Item Form Dialog */}
-      <Dialog
+      {/* Item Form Drawer */}
+      <Drawer
+        anchor="right"
         open={isFormOpen}
         onClose={handleCloseForm}
-        maxWidth="md"
-        fullWidth
+        sx={{
+          '& .MuiDrawer-paper': { 
+            width: { xs: '100%', sm: '550px' },
+            maxWidth: '100%',
+            p: 0
+          },
+        }}
       >
-        <DialogTitle>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Box sx={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          height: '100%'
+        }}>
+          <Box sx={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center',
+            p: 2,
+            borderBottom: '1px solid',
+            borderColor: 'divider'
+          }}>
             <Typography variant="h6">
-              {editingItemId ? 'Edit Inventory Item' : 'Add New Inventory Item'}
+              Add Inventory
             </Typography>
-            <IconButton onClick={handleCloseForm} size="small">
-              <CloseIcon />
-            </IconButton>
+            <Box>
+              <Button 
+                variant="contained" 
+                color="primary"
+                onClick={handleAdjustmentSubmit(onAdjustmentSubmit)}
+                startIcon={<CheckCircleIcon />}
+                disabled={isSubmittingAdjustment || isAdjustmentSubmitting}
+                sx={{ 
+                  bgcolor: '#003366',
+                  '&:hover': {
+                    bgcolor: '#002244'
+                  }
+                }}
+              >
+                Save Changes
+              </Button>
+              <IconButton onClick={handleCloseForm} size="small" sx={{ ml: 1 }}>
+                <CloseIcon />
+              </IconButton>
+            </Box>
           </Box>
-        </DialogTitle>
-        <DialogContent dividers>
-          <form id="inventory-form" onSubmit={handleSubmit(onSubmit)}>
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
-                <Controller
-                  name="product"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControl error={!!errors.product} fullWidth>
-                      <TextField
-                        {...field}
-                        label="Product Name"
-                        variant="outlined"
-                        error={!!errors.product}
-                        helperText={errors.product?.message}
-                      />
-                    </FormControl>
-                  )}
-                />
-              </Grid>
-
-              <Grid item xs={12} md={6}>
-                <Controller
-                  name="sku"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControl error={!!errors.sku} fullWidth>
-                      <TextField
-                        {...field}
-                        label="SKU"
-                        variant="outlined"
-                        error={!!errors.sku}
-                        helperText={errors.sku?.message}
-                      />
-                    </FormControl>
-                  )}
-                />
-              </Grid>
-
-              <Grid item xs={12} md={6}>
-                <Controller
-                  name="location"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControl error={!!errors.location} fullWidth>
-                      <TextField
-                        {...field}
-                        label="Location"
-                        variant="outlined"
-                        error={!!errors.location}
-                        helperText={errors.location?.message}
-                      />
-                    </FormControl>
-                  )}
-                />
-              </Grid>
-
-              <Grid item xs={12} md={6}>
-                <Controller
-                  name="availableQuantity"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControl error={!!errors.availableQuantity} fullWidth>
-                      <TextField
-                        {...field}
-                        label="Available Quantity"
-                        variant="outlined"
-                        type="number"
-                        error={!!errors.availableQuantity}
-                        helperText={errors.availableQuantity?.message}
-                      />
-                    </FormControl>
-                  )}
-                />
-              </Grid>
-
-              <Grid item xs={12} md={6}>
-                <Controller
-                  name="status"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControl error={!!errors.status} fullWidth>
-                      <TextField
-                        {...field}
-                        select
-                        label="Status"
-                        variant="outlined"
-                        error={!!errors.status}
-                        helperText={errors.status?.message}
-                      >
-                        <MenuItem value="Active">Active</MenuItem>
-                        <MenuItem value="Inactive">Inactive</MenuItem>
-                        <MenuItem value="Low Stock">Low Stock</MenuItem>
-                      </TextField>
-                    </FormControl>
-                  )}
-                />
-              </Grid>
-
-              <Grid item xs={12} md={6}>
-                <Controller
-                  name="customer"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControl fullWidth>
-                      <TextField
-                        {...field}
-                        select
-                        label="Customer/Team"
-                        variant="outlined"
-                      >
-                        <MenuItem value="CUSTOMER">CUSTOMER</MenuItem>
-                        <MenuItem value="DEVOTEAM">DEVOTEAM</MenuItem>
-                      </TextField>
-                    </FormControl>
-                  )}
-                />
-              </Grid>
-
-              <Grid item xs={12}>
-                <Divider sx={{ my: 1 }} />
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                  <Controller
-                    name="lotTracked"
-                    control={control}
-                    render={({ field }) => (
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={field.value}
-                            onChange={(e) => field.onChange(e.target.checked)}
-                          />
-                        }
-                        label="Lot Tracked"
-                      />
-                    )}
-                  />
-                  <Tooltip title="Enable lot tracking for this inventory item">
-                    <HelpOutlineIcon fontSize="small" sx={{ ml: 1, color: 'text.secondary' }} />
-                  </Tooltip>
+          
+          <Box sx={{ 
+            flexGrow: 1, 
+            overflow: 'auto',
+            p: 3
+          }}>
+            {submitError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {submitError}
+              </Alert>
+            )}
+            
+            <form id="adjustment-form" onSubmit={handleAdjustmentSubmit(onAdjustmentSubmit)}>
+              {/* Product & Location Details */}
+              <Box sx={{ mb: 4 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                    Add Adjustment
+                  </Typography>
+                  <Button 
+                    variant="contained" 
+                    color="primary"
+                    onClick={handleAdjustmentSubmit(onAdjustmentSubmit)}
+                    startIcon={<SaveIcon />}
+                    size="small"
+                    disabled={isSubmittingAdjustment || isAdjustmentSubmitting}
+                    sx={{ 
+                      bgcolor: '#003366',
+                      '&:hover': {
+                        bgcolor: '#002244'
+                      }
+                    }}
+                  >
+                    Save
+                  </Button>
                 </Box>
-              </Grid>
-
-              {lotTracked && (
-                <>
-                  <Grid item xs={12} md={6}>
+                <Grid container spacing={3}>
+                  <Grid item xs={12}>
                     <Controller
-                      name="lotNumber"
-                      control={control}
+                      name="product"
+                      control={adjustmentControl}
                       render={({ field }) => (
-                        <FormControl fullWidth>
+                        <FormControl error={!!adjustmentErrors.product} fullWidth>
                           <TextField
                             {...field}
-                            label="Lot Number"
+                            label="Product *"
                             variant="outlined"
+                            error={!!adjustmentErrors.product}
+                            helperText={adjustmentErrors.product?.message}
+                            placeholder="Search product by name or SKU"
+                            InputProps={{
+                              startAdornment: (
+                                <InputAdornment position="start">
+                                  <InventoryIcon color="action" />
+                                </InputAdornment>
+                              ),
+                              endAdornment: (
+                                <InputAdornment position="end">
+                                  <SearchIcon />
+                                </InputAdornment>
+                              ),
+                            }}
                           />
                         </FormControl>
                       )}
                     />
                   </Grid>
-
-                  <Grid item xs={12} md={6}>
+                  
+                  <Grid item xs={12}>
+                    <Controller
+                      name="location"
+                      control={adjustmentControl}
+                      render={({ field }) => (
+                        <FormControl error={!!adjustmentErrors.location} fullWidth>
+                          <TextField
+                            {...field}
+                            select
+                            label="Location *"
+                            variant="outlined"
+                            error={!!adjustmentErrors.location}
+                            helperText={adjustmentErrors.location?.message}
+                            disabled={isLoadingLocations}
+                            InputProps={{
+                              startAdornment: (
+                                <InputAdornment position="start">
+                                  <LocationOnIcon color="action" />
+                                </InputAdornment>
+                              ),
+                            }}
+                          >
+                            <MenuItem value="">Select location</MenuItem>
+                            {locations.map((location) => (
+                              <MenuItem key={location.id} value={location.id.toString()}>
+                                {location.name}
+                              </MenuItem>
+                            ))}
+                          </TextField>
+                        </FormControl>
+                      )}
+                    />
+                  </Grid>
+                </Grid>
+              </Box>
+              
+              {/* Inventory Details */}
+              <Box sx={{ mb: 4 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2 }}>
+                  Inventory Details
+                </Typography>
+                <Grid container spacing={3}>
+                  <Grid item xs={12} sm={6}>
+                    <Controller
+                      name="serialLotNumber"
+                      control={adjustmentControl}
+                      render={({ field }) => (
+                        <FormControl fullWidth>
+                          <TextField
+                            {...field}
+                            label="Serial/Lot Number"
+                            variant="outlined"
+                            InputProps={{
+                              startAdornment: (
+                                <InputAdornment position="start">
+                                  <QrCodeIcon color="action" />
+                                </InputAdornment>
+                              ),
+                            }}
+                          />
+                        </FormControl>
+                      )}
+                    />
+                  </Grid>
+                  
+                  <Grid item xs={12} sm={6}>
                     <Controller
                       name="expiryDate"
-                      control={control}
+                      control={adjustmentControl}
                       render={({ field }) => (
                         <FormControl fullWidth>
                           <TextField
@@ -1091,75 +1300,310 @@ export default function InventoryPage() {
                             variant="outlined"
                             type="date"
                             InputLabelProps={{ shrink: true }}
-                          />
-                        </FormControl>
-                      )}
-                    />
-                  </Grid>
-
-                  <Grid item xs={12} md={6}>
-                    <Controller
-                      name="lotStrategy"
-                      control={control}
-                      render={({ field }) => (
-                        <FormControl fullWidth>
-                          <TextField
-                            {...field}
-                            select
-                            label="Lot Strategy"
-                            variant="outlined"
-                          >
-                            <MenuItem value="FIFO">FIFO (First In, First Out)</MenuItem>
-                            <MenuItem value="FEFO">FEFO (First Expired, First Out)</MenuItem>
-                          </TextField>
-                        </FormControl>
-                      )}
-                    />
-                  </Grid>
-
-                  <Grid item xs={12} md={6}>
-                    <Controller
-                      name="costPricePerUnit"
-                      control={control}
-                      render={({ field }) => (
-                        <FormControl fullWidth>
-                          <TextField
-                            {...field}
-                            label="Cost Price Per Unit"
-                            variant="outlined"
                             InputProps={{
-                              startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                              startAdornment: (
+                                <InputAdornment position="start">
+                                  <EventIcon color="action" />
+                                </InputAdornment>
+                              ),
                             }}
                           />
                         </FormControl>
                       )}
                     />
                   </Grid>
-                </>
+                  
+                  <Grid item xs={12}>
+                    <Controller
+                      name="adjustmentType"
+                      control={adjustmentControl}
+                      render={({ field }) => (
+                        <FormControl error={!!adjustmentErrors.adjustmentType} fullWidth>
+                          <TextField
+                            {...field}
+                            select
+                            label="Adjustment Type *"
+                            variant="outlined"
+                            error={!!adjustmentErrors.adjustmentType}
+                            helperText={adjustmentErrors.adjustmentType?.message}
+                            disabled={isLoadingTypes}
+                            InputProps={{
+                              startAdornment: (
+                                <InputAdornment position="start">
+                                  <SwapVertIcon color="action" />
+                                </InputAdornment>
+                              ),
+                            }}
+                          >
+                            <MenuItem value="">Select type</MenuItem>
+                            {adjustmentTypes?.map((type) => (
+                              <MenuItem key={type.id} value={type.code}>
+                                {type.name}
+                              </MenuItem>
+                            )) || (
+                              <>
+                                <MenuItem value="ADD">Add</MenuItem>
+                                <MenuItem value="REMOVE">Remove</MenuItem>
+                              </>
+                            )}
+                          </TextField>
+                        </FormControl>
+                      )}
+                    />
+                  </Grid>
+                  
+                  <Grid item xs={12}>
+                    <Controller
+                      name="reason"
+                      control={adjustmentControl}
+                      render={({ field }) => (
+                        <FormControl error={!!adjustmentErrors.reason} fullWidth>
+                          <TextField
+                            {...field}
+                            select
+                            label="Reason *"
+                            variant="outlined"
+                            error={!!adjustmentErrors.reason}
+                            helperText={adjustmentErrors.reason?.message}
+                            disabled={isLoadingReasons}
+                            InputProps={{
+                              startAdornment: (
+                                <InputAdornment position="start">
+                                  <ReportProblemIcon color="action" />
+                                </InputAdornment>
+                              ),
+                            }}
+                          >
+                            <MenuItem value="">Select reason</MenuItem>
+                            {reasons?.map((reason) => (
+                              <MenuItem key={reason.id} value={reason.id.toString()}>
+                                {reason.name}
+                              </MenuItem>
+                            )) || (
+                              <>
+                                <MenuItem value="1">Initial Stock</MenuItem>
+                                <MenuItem value="2">Stock Count</MenuItem>
+                                <MenuItem value="3">Damaged</MenuItem>
+                                <MenuItem value="4">Expired</MenuItem>
+                                <MenuItem value="5">Lost</MenuItem>
+                              </>
+                            )}
+                          </TextField>
+                        </FormControl>
+                      )}
+                    />
+                  </Grid>
+                  
+                  <Grid item xs={12}>
+                    <Controller
+                      name="quantity"
+                      control={adjustmentControl}
+                      render={({ field }) => (
+                        <FormControl error={!!adjustmentErrors.quantity} fullWidth>
+                          <TextField
+                            {...field}
+                            label="Quantity *"
+                            variant="outlined"
+                            type="number"
+                            error={!!adjustmentErrors.quantity}
+                            helperText={adjustmentErrors.quantity?.message}
+                            InputProps={{
+                              startAdornment: (
+                                <InputAdornment position="start">
+                                  <NumbersIcon color="action" />
+                                </InputAdornment>
+                              ),
+                            }}
+                          />
+                        </FormControl>
+                      )}
+                    />
+                  </Grid>
+                </Grid>
+              </Box>
+              
+              {/* Current Quantities */}
+              {(productId && locationId) && (
+                <Box sx={{ mb: 4 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2 }}>
+                    Current Quantities
+                  </Typography>
+                  
+                  {isLoadingStock ? (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+                      <CircularProgress size={24} />
+                    </Box>
+                  ) : stockError ? (
+                    <Alert severity="error" sx={{ mb: 2 }}>
+                      {stockError}
+                    </Alert>
+                  ) : (
+                    <Card variant="outlined" sx={{ mb: 3 }}>
+                      <CardContent>
+                        <Grid container spacing={2}>
+                          <Grid item xs={6} sm={3}>
+                            <Typography variant="caption" color="text.secondary">
+                              Stock Quantity
+                            </Typography>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                              {currentStock.stockQuantity}
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={6} sm={3}>
+                            <Typography variant="caption" color="text.secondary">
+                              Reserved Quantity
+                            </Typography>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                              {currentStock.reservedQuantity}
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={6} sm={3}>
+                            <Typography variant="caption" color="text.secondary">
+                              Non-Saleable
+                            </Typography>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                              {currentStock.nonSaleable}
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={6} sm={3}>
+                            <Typography variant="caption" color="text.secondary">
+                              On Order
+                            </Typography>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                              {currentStock.onOrder}
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={6} sm={3}>
+                            <Typography variant="caption" color="text.secondary">
+                              In Transit
+                            </Typography>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                              {currentStock.inTransit}
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={6} sm={3}>
+                            <Typography variant="caption" color="text.secondary">
+                              Returned
+                            </Typography>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                              {currentStock.returned}
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={6} sm={3}>
+                            <Typography variant="caption" color="text.secondary">
+                              On Hold
+                            </Typography>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                              {currentStock.onHold}
+                            </Typography>
+                          </Grid>
+                          <Grid item xs={6} sm={3}>
+                            <Typography variant="caption" color="text.secondary">
+                              Backorder
+                            </Typography>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                              {currentStock.backorder}
+                            </Typography>
+                          </Grid>
+                        </Grid>
+                      </CardContent>
+                    </Card>
+                  )}
+                </Box>
               )}
-            </Grid>
-          </form>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseForm} color="inherit">
-            Cancel
-          </Button>
-          <Button 
-            type="submit"
-            form="inventory-form"
-            variant="contained"
-            disabled={isSubmitting}
-            sx={{ 
-              bgcolor: '#003366',
-              '&:hover': {
-                bgcolor: '#002244'
-              }
-            }}
-          >
-            {editingItemId ? 'Update' : 'Add'} Item
-          </Button>
-        </DialogActions>
-      </Dialog>
+              
+              {/* Additional Notes */}
+              <Box sx={{ mb: 4 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2 }}>
+                  Additional Notes
+                </Typography>
+                <Controller
+                  name="notes"
+                  control={adjustmentControl}
+                  render={({ field }) => (
+                    <FormControl fullWidth>
+                      <TextField
+                        {...field}
+                        label="Notes"
+                        variant="outlined"
+                        multiline
+                        rows={4}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start" sx={{ alignSelf: 'flex-start', mt: 1 }}>
+                              <SummarizeIcon color="action" />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    </FormControl>
+                  )}
+                />
+              </Box>
+              
+              {/* Adjustment Summary */}
+              {(adjustmentType && quantity > 0) && (
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2 }}>
+                    Adjustment Summary
+                  </Typography>
+                  <Card variant="outlined">
+                    <CardContent>
+                      <Grid container spacing={2}>
+                        <Grid item xs={4}>
+                          <Typography variant="caption" color="text.secondary">
+                            Current Stock
+                          </Typography>
+                          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                            {currentStock.stockQuantity}
+                          </Typography>
+                        </Grid>
+                        <Grid item xs={4}>
+                          <Typography variant="caption" color="text.secondary">
+                            Adjustment
+                          </Typography>
+                          <Typography 
+                            variant="h6" 
+                            sx={{ 
+                              fontWeight: 'bold',
+                              color: adjustmentQuantity >= 0 ? 'success.main' : 'error.main'
+                            }}
+                          >
+                            {adjustmentQuantity >= 0 ? '+' : ''}{adjustmentQuantity}
+                          </Typography>
+                        </Grid>
+                        <Grid item xs={4}>
+                          <Typography variant="caption" color="text.secondary">
+                            New Stock Level
+                          </Typography>
+                          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                            {newStockLevel}
+                          </Typography>
+                        </Grid>
+                      </Grid>
+                      
+                      <Box sx={{ mt: 2, display: 'flex', alignItems: 'center' }}>
+                        <Box 
+                          sx={{ 
+                            width: 10, 
+                            height: 10, 
+                            borderRadius: '50%', 
+                            bgcolor: 'success.main',
+                            mr: 1 
+                          }} 
+                        />
+                        <Typography variant="body2" color="text.secondary">
+                          Valid Adjustment
+                        </Typography>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Box>
+              )}
+            </form>
+          </Box>
+        </Box>
+      </Drawer>
     </Box>
   );
 }
