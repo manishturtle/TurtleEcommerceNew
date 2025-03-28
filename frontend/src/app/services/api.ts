@@ -45,9 +45,25 @@ export interface AdjustmentType {
   name: string;
 }
 
+// Interface for FulfillmentLocation
+export interface FulfillmentLocation {
+  id: number;
+  name: string;
+  code: string;
+  type: string;
+  address?: string;
+  is_active: boolean;
+}
+
 // Fetch adjustment types
 export const fetchAdjustmentTypes = async (): Promise<AdjustmentType[]> => {
   const response = await api.get('/inventory/adjustment-types/');
+  return response.data;
+};
+
+// Fetch fulfillment locations
+export const fetchLocations = async (params?: ApiParams): Promise<PaginatedResponse<FulfillmentLocation>> => {
+  const response = await api.get('/inventory/fulfillment-locations/', { params });
   return response.data;
 };
 

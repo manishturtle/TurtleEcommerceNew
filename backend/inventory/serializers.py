@@ -48,8 +48,7 @@ class FulfillmentLocationSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'location_type', 'address_line_1',
             'address_line_2', 'city', 'state_province', 'postal_code',
-            'country_code', 'is_active', 'created_at', 'updated_at',
-            'contact_name', 'contact_email', 'contact_phone'
+            'country_code', 'is_active', 'created_at', 'updated_at'
         ]
         read_only_fields = ('created_at', 'updated_at')
 

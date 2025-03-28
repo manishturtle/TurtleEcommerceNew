@@ -50,7 +50,7 @@ import Inventory2Icon from '@mui/icons-material/Inventory2';
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
 import { useAdjustmentReasons } from '@/app/hooks/useAdjustmentReasons';
 import { useAdjustmentTypes } from '@/app/hooks/useAdjustmentTypes';
-import { fetchCurrentStock, createInventoryAdjustment } from '@/app/services/api';
+import { fetchCurrentStock, createInventoryAdjustment, fetchLocations, FulfillmentLocation } from '@/app/services/api';
 
 // Define Zod schema for inventory adjustment validation
 const inventoryAdjustmentSchema = z.object({
@@ -95,6 +95,20 @@ export default function AddInventoryPage() {
   const { reasons, isLoading: isLoadingReasons, error: reasonsError } = useAdjustmentReasons();
   const { adjustmentTypes, isLoading: isLoadingTypes } = useAdjustmentTypes();
   
+  // State for locations
+  const [locations, setLocations] = useState<FulfillmentLocation[]>([]);
+  const [isLoadingLocations, setIsLoadingLocations] = useState(false);
+  const [locationsError, setLocationsError] = useState<string | null>(null);
+  
+  // Mock locations data for development
+  const mockLocations: FulfillmentLocation[] = [
+    { id: 1, name: 'Warehouse A', code: 'WH-A', type: 'WAREHOUSE', is_active: true },
+    { id: 2, name: 'Warehouse B', code: 'WH-B', type: 'WAREHOUSE', is_active: true },
+    { id: 3, name: 'Store Location 1', code: 'ST-1', type: 'STORE', is_active: true },
+    { id: 4, name: 'Distribution Center', code: 'DC-1', type: 'DISTRIBUTION', is_active: true },
+    { id: 5, name: 'Returns Processing', code: 'RP-1', type: 'RETURNS', is_active: true }
+  ];
+  
   // State for current stock
   const [currentStock, setCurrentStock] = useState({
     id: 0,
@@ -130,6 +144,30 @@ export default function AddInventoryPage() {
   
   // Calculate new stock level based on current stock and adjustment quantity
   const newStockLevel = currentStock.stockQuantity + adjustmentQuantity;
+
+  // Fetch locations when component mounts
+  useEffect(() => {
+    const getLocations = async () => {
+      try {
+        setIsLoadingLocations(true);
+        setLocationsError(null);
+        
+        // Use the actual API call now that the backend issue is fixed
+        const response = await fetchLocations({ is_active: true });
+        setLocations(response.results);
+      } catch (error) {
+        console.error('Error fetching locations:', error);
+        setLocationsError('Failed to load locations');
+        
+        // Fallback to mock data if API still fails
+        setLocations(mockLocations);
+      } finally {
+        setIsLoadingLocations(false);
+      }
+    };
+    
+    getLocations();
+  }, []);
 
   // Fetch current stock when product and location change
   useEffect(() => {
@@ -290,12 +328,20 @@ export default function AddInventoryPage() {
                           label="Location *"
                           variant="outlined"
                           error={!!errors.location}
-                          helperText={errors.location?.message}
+                          helperText={errors.location?.message || locationsError}
                           fullWidth
+                          disabled={isLoadingLocations}
                         >
                           <MenuItem value="">Select location</MenuItem>
-                          <MenuItem value="wa">Warehouse A</MenuItem>
-                          <MenuItem value="wb">Warehouse B</MenuItem>
+                          {isLoadingLocations ? (
+                            <MenuItem disabled>Loading locations...</MenuItem>
+                          ) : (
+                            locations.map((location) => (
+                              <MenuItem key={location.id} value={location.id.toString()}>
+                                {location.name}
+                              </MenuItem>
+                            ))
+                          )}
                         </TextField>
                       )}
                     />
