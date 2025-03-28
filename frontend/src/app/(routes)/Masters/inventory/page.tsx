@@ -21,7 +21,8 @@ import {
   FormLabel,
   FormControlLabel,
   Checkbox,
-  Tooltip
+  Tooltip,
+  Popover
 } from '@mui/material';
 import { 
   DataGrid, 
@@ -180,6 +181,9 @@ export default function InventoryPage() {
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [dateFilter, setDateFilter] = useState('This Week');
+  const [view, setView] = useState('grid');
+  const [dateAnchorEl, setDateAnchorEl] = useState<HTMLElement | null>(null);
+  const [dateRangeText, setDateRangeText] = useState('This Week');
   const [paginationModel, setPaginationModel] = useState<GridPaginationModel>({
     pageSize: 5,
     page: 0
@@ -190,7 +194,6 @@ export default function InventoryPage() {
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
   const [lotExpiryDateStr, setLotExpiryDateStr] = useState<string>('');
   const [selectionModel, setSelectionModel] = useState<GridRowSelectionModel>([]);
-  const [view, setView] = useState('grid');
 
   // Initialize react-hook-form with zod resolver
   const { 
@@ -257,7 +260,13 @@ export default function InventoryPage() {
             const endOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
             dateFilterPassed = expiryDate >= startOfLastMonth && expiryDate <= endOfLastMonth;
             break;
-          // Custom range would be handled separately
+          case 'Custom Range':
+            if (startDate && endDate) {
+              dateFilterPassed = expiryDate >= startDate && expiryDate <= endDate;
+            } else {
+              dateFilterPassed = true;
+            }
+            break;
         }
       }
       
@@ -265,7 +274,7 @@ export default function InventoryPage() {
     });
     
     setFilteredItems(filtered);
-  }, [searchTerm, inventoryItems, dateFilter]);
+  }, [searchTerm, inventoryItems, dateFilter, startDate, endDate]);
 
   // Handle search input change
   const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -274,8 +283,68 @@ export default function InventoryPage() {
 
   // Handle date filter change
   const handleDateFilterChange = (event: React.ChangeEvent<{ value: unknown }>) => {
-    setDateFilter(event.target.value as string);
+    const value = event.target.value as string;
+    setDateFilter(value);
+    
+    // Set date range based on selection
+    const today = new Date();
+    
+    if (value === 'This Week') {
+      const startOfWeek = new Date(today);
+      startOfWeek.setDate(today.getDate() - today.getDay());
+      const endOfWeek = new Date(today);
+      endOfWeek.setDate(startOfWeek.getDate() + 6);
+      setStartDate(startOfWeek);
+      setEndDate(endOfWeek);
+      setDateRangeText('This Week');
+    } else if (value === 'Last Week') {
+      const startOfLastWeek = new Date(today);
+      startOfLastWeek.setDate(today.getDate() - today.getDay() - 7);
+      const endOfLastWeek = new Date(today);
+      endOfLastWeek.setDate(startOfLastWeek.getDate() + 6);
+      setStartDate(startOfLastWeek);
+      setEndDate(endOfLastWeek);
+      setDateRangeText('Last Week');
+    } else if (value === 'This Month') {
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      setStartDate(startOfMonth);
+      setEndDate(endOfMonth);
+      setDateRangeText('This Month');
+    } else if (value === 'Last Month') {
+      const startOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const endOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+      setStartDate(startOfLastMonth);
+      setEndDate(endOfLastMonth);
+      setDateRangeText('Last Month');
+    } else if (value === 'Custom Range') {
+      // Open date picker dialog
+      setDateRangeText('Custom Range');
+    }
+    
+    setDateAnchorEl(null);
   };
+
+  // Handle custom date range selection
+  const handleCustomDateChange = (start: Date | null, end: Date | null) => {
+    setStartDate(start);
+    setEndDate(end);
+    if (start && end) {
+      setDateRangeText(`${start.toLocaleDateString()} - ${end.toLocaleDateString()}`);
+    }
+  };
+
+  // Handle opening the date filter menu
+  const handleDateFilterOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setDateAnchorEl(event.currentTarget);
+  };
+
+  // Handle closing the date filter menu
+  const handleDateFilterClose = () => {
+    setDateAnchorEl(null);
+  };
+
+  const dateFilterOpen = Boolean(dateAnchorEl);
 
   // Open form dialog
   const handleOpenForm = (itemId?: number) => {
@@ -680,34 +749,74 @@ export default function InventoryPage() {
                 >
                   <GridViewIcon fontSize="small" />
                 </IconButton>
-                <TextField
-                  select
+                <IconButton
                   size="small"
-                  value={dateFilter}
-                  variant="standard"
-                  InputProps={{
-                    disableUnderline: true,
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <CalendarTodayIcon fontSize="small" sx={{ color: 'text.secondary' }} />
-                      </InputAdornment>
-                    ),
-                  }}
-                  sx={{ 
-                    ml: 1,
-                    '& .MuiSelect-select': {
-                      py: 0,
-                      fontSize: '0.875rem',
-                    }
-                  }}
-                  onChange={handleDateFilterChange}
+                  onClick={handleDateFilterOpen}
+                  sx={{ color: 'text.secondary', ml: 1 }}
                 >
-                  <MenuItem value="This Week">This Week</MenuItem>
-                  <MenuItem value="Last Week">Last Week</MenuItem>
-                  <MenuItem value="This Month">This Month</MenuItem>
-                  <MenuItem value="Last Month">Last Month</MenuItem>
-                  <MenuItem value="Custom Range">Custom Range</MenuItem>
-                </TextField>
+                  <CalendarTodayIcon fontSize="small" />
+                </IconButton>
+                <Typography variant="body2" sx={{ ml: 0.5 }}>
+                  {dateRangeText}
+                </Typography>
+                
+                <Popover
+                  open={dateFilterOpen}
+                  anchorEl={dateAnchorEl}
+                  onClose={handleDateFilterClose}
+                  anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'left',
+                  }}
+                  transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'left',
+                  }}
+                >
+                  <Box sx={{ p: 2, width: 200 }}>
+                    <Typography variant="subtitle2" sx={{ mb: 1 }}>Date Range</Typography>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      {['This Week', 'Last Week', 'This Month', 'Last Month', 'Custom Range'].map((option) => (
+                        <MenuItem 
+                          key={option} 
+                          value={option}
+                          selected={dateFilter === option}
+                          onClick={() => handleDateFilterChange({ target: { value: option } } as any)}
+                        >
+                          {option}
+                        </MenuItem>
+                      ))}
+                    </Box>
+                    
+                    {dateFilter === 'Custom Range' && (
+                      <Box sx={{ mt: 2 }}>
+                        <Typography variant="caption" sx={{ mb: 1 }}>Start Date</Typography>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="date"
+                          value={startDate ? startDate.toISOString().split('T')[0] : ''}
+                          onChange={(e) => {
+                            const date = e.target.value ? new Date(e.target.value) : null;
+                            handleCustomDateChange(date, endDate);
+                          }}
+                          sx={{ mb: 1 }}
+                        />
+                        <Typography variant="caption" sx={{ mb: 1 }}>End Date</Typography>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          type="date"
+                          value={endDate ? endDate.toISOString().split('T')[0] : ''}
+                          onChange={(e) => {
+                            const date = e.target.value ? new Date(e.target.value) : null;
+                            handleCustomDateChange(startDate, date);
+                          }}
+                        />
+                      </Box>
+                    )}
+                  </Box>
+                </Popover>
               </Box>
             </Box>
           </Box>
