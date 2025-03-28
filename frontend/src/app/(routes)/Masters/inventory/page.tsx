@@ -27,7 +27,7 @@ import {
 import { 
   DataGrid, 
   GridColDef, 
-  GridValueGetterParams, 
+  GridValueGetter, 
   GridRenderCellParams, 
   GridRowSelectionModel,
   GridPaginationModel,
@@ -184,7 +184,7 @@ export default function InventoryPage() {
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [dateFilter, setDateFilter] = useState('This Week');
-  const [view, setView] = useState('grid');
+  const [view, setView] = useState<'list' | 'grid'>('grid');
   const [dateAnchorEl, setDateAnchorEl] = useState<HTMLElement | null>(null);
   const [dateRangeText, setDateRangeText] = useState('This Week');
   const [paginationModel, setPaginationModel] = useState<GridPaginationModel>({
@@ -197,6 +197,7 @@ export default function InventoryPage() {
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
   const [lotExpiryDateStr, setLotExpiryDateStr] = useState<string>('');
   const [selectionModel, setSelectionModel] = useState<GridRowSelectionModel>([]);
+  const [loading, setLoading] = useState(false);
 
   // Initialize react-hook-form with zod resolver
   const { 
@@ -448,6 +449,14 @@ export default function InventoryPage() {
     
     // Close the form dialog
     handleCloseForm();
+  };
+
+  // Handle filter menu open
+  const handleFilterClick = () => {
+    const filterButton = document.querySelector('.MuiDataGrid-toolbarFilterButton');
+    if (filterButton) {
+      (filterButton as HTMLElement).click();
+    }
   };
 
   // Define columns for the DataGrid
@@ -744,12 +753,7 @@ export default function InventoryPage() {
               <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
               <IconButton
                 size="small"
-                onClick={() => {
-                  const filterButton = document.querySelector('.MuiDataGrid-toolbarFilterButton');
-                  if (filterButton) {
-                    (filterButton as HTMLElement).click();
-                  }
-                }}
+                onClick={handleFilterClick}
                 sx={{ color: 'text.secondary' }}
               >
                 <FilterListIcon fontSize="small" />
@@ -759,7 +763,14 @@ export default function InventoryPage() {
             <Divider orientation="vertical" flexItem />
             
             {/* View mode group */}
-            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center',
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 1,
+              p: 0.5
+            }}>
               <IconButton
                 size="small"
                 onClick={() => handleViewChange('list')}
@@ -785,7 +796,14 @@ export default function InventoryPage() {
             <Divider orientation="vertical" flexItem />
             
             {/* Date filter group */}
-            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center',
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 1,
+              p: 0.5
+            }}>
               <IconButton
                 size="small"
                 onClick={handleDateFilterOpen}
@@ -877,7 +895,9 @@ export default function InventoryPage() {
             setSelectionModel([...newSelectionModel]);
           }}
           hideToolbar={false}
-          viewMode={view as 'list' | 'grid'}
+          viewMode={view}
+          loading={loading}
+          getRowId={(row) => row.id}
         />
       </ContentCard>
 

@@ -105,6 +105,7 @@ interface CustomDataGridProps {
   className?: string;
   hideToolbar?: boolean;
   viewMode?: 'list' | 'grid';
+  density?: 'compact' | 'standard' | 'comfortable';
 }
 
 const CustomDataGrid: React.FC<CustomDataGridProps> = ({
@@ -123,10 +124,11 @@ const CustomDataGrid: React.FC<CustomDataGridProps> = ({
   getRowId,
   className,
   hideToolbar = false,
-  viewMode = 'grid'
+  viewMode = 'grid',
+  density: propDensity
 }) => {
-  // Adjust density based on view mode
-  const density = viewMode === 'list' ? 'compact' : 'standard';
+  // Adjust density based on view mode if not explicitly provided
+  const density = propDensity || (viewMode === 'list' ? 'compact' : 'standard');
   
   return (
     <DataGrid
