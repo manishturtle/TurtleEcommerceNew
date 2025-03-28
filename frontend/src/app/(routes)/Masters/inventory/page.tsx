@@ -350,97 +350,35 @@ export default function InventoryPage() {
   // Define columns for the DataGrid
   const columns: GridColDef[] = useMemo(() => [
     { 
-      field: 'checkbox',
+      field: '__check__',
       headerName: '',
       width: 50,
       sortable: false,
       filterable: false,
       disableColumnMenu: true,
-      renderHeader: () => (
-        <Box sx={{ pl: 1 }}>
-          <Checkbox
-            indeterminate={selectionModel.length > 0 && selectionModel.length < filteredItems.length}
-            checked={selectionModel.length > 0 && selectionModel.length === filteredItems.length}
-            onChange={(event) => {
-              const newSelectionModel = event.target.checked 
-                ? filteredItems.map(item => item.id) 
-                : [];
-              setSelectionModel(newSelectionModel);
-            }}
-            sx={{
-              padding: 0,
-              '& .MuiSvgIcon-root': { fontSize: 20 }
-            }}
-          />
-        </Box>
-      ),
-      renderCell: (params) => {
-        const isSelected = selectionModel.includes(params.row.id);
-        return (
-          <Box sx={{ pl: 1 }}>
-            <Checkbox
-              checked={isSelected}
-              onChange={() => {
-                const id = params.row.id;
-                const newSelectionModel = [...selectionModel];
-                
-                if (!isSelected) {
-                  if (!newSelectionModel.includes(id)) {
-                    newSelectionModel.push(id);
-                  }
-                } else {
-                  const index = newSelectionModel.indexOf(id);
-                  if (index > -1) {
-                    newSelectionModel.splice(index, 1);
-                  }
-                }
-                
-                setSelectionModel(newSelectionModel);
-              }}
-              sx={{
-                padding: 0,
-                '& .MuiSvgIcon-root': { fontSize: 20 }
-              }}
-            />
-          </Box>
-        );
-      }
+      align: 'center',
+      headerAlign: 'center',
     },
     { 
       field: 'product', 
       headerName: 'Product', 
-      flex: 2,
-      minWidth: 250,
-      align: 'left',
-      headerAlign: 'left',
-      renderCell: (params) => {
-        const product = params.row.product;
-        
-        return (
-          <Box sx={{ 
-            display: 'flex', 
-            alignItems: 'center',
-            gap: 2,
-            width: '100%',
-            height: '100%',
-            pl: 1
-          }}>
-            <Box 
-              component="img"
-              src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT0Nss1BY7Ntq2mHZyaaPs3yWzseQ78Ou3OFg&s"
-              alt="Refresh"
-              sx={{ 
-                width: 24, 
-                height: 24, 
-                objectFit: 'contain'
-              }}
-            />
-            <Typography variant="body2" sx={{ fontWeight: 500 }}>
-              {product}
-            </Typography>
-          </Box>
-        );
-      }
+      flex: 1,
+      minWidth: 200,
+      align: 'center',
+      headerAlign: 'center',
+      renderCell: (params) => (
+        <Box sx={{ 
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <Typography variant="body2">
+            {params.value}
+          </Typography>
+        </Box>
+      )
     },
     { 
       field: 'location', 
@@ -767,6 +705,48 @@ export default function InventoryPage() {
             '& .MuiDataGrid-columnHeaderTitleContainer': {
               display: 'none'
             }
+          },
+          '& .MuiDataGrid-checkboxInput': {
+            display: 'flex',
+            justifyContent: 'center'
+          },
+          '& .MuiDataGrid-cell:focus': {
+            outline: 'none',
+          },
+          '& .MuiDataGrid-row:hover': {
+            backgroundColor: 'rgba(0, 0, 0, 0.04)',
+          },
+          '& .MuiDataGrid-columnHeader': {
+            color: 'text.secondary',
+            fontWeight: 600,
+            fontSize: '0.875rem',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em'
+          },
+          '& .MuiDataGrid-cell': {
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 0
+          },
+          '& .MuiDataGrid-footerContainer': {
+            borderTop: '1px solid',
+            borderColor: 'divider',
+          },
+          '& .MuiDataGrid-columnHeaderCheckbox .MuiDataGrid-columnHeaderTitleContainer': {
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            paddingTop: '0px'
+          },
+          '& .MuiDataGrid-checkboxInput': {
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            paddingTop: '2px'
+          },
+          '& .MuiCheckbox-root': {
+            padding: '0px'
           }
         }}
       >
@@ -776,56 +756,13 @@ export default function InventoryPage() {
           paginationModel={paginationModel}
           onPaginationModelChange={setPaginationModel}
           pageSizeOptions={[5, 10, 20]}
-          disableRowSelectionOnClick
           autoHeight
-          checkboxSelection={false}
+          checkboxSelection
+          disableRowSelectionOnClick={false}
           rowSelectionModel={selectionModel}
           onRowSelectionModelChange={(newSelectionModel: GridRowSelectionModel) => {
             // Convert readonly array to mutable array
             setSelectionModel([...newSelectionModel]);
-          }}
-          slots={{
-            pagination: () => (
-              <Box sx={{ 
-                p: 2, 
-                display: 'flex', 
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Button 
-                    variant="outlined" 
-                    size="small" 
-                    sx={{ borderRadius: 1 }}
-                    disabled={paginationModel.page === 0}
-                    onClick={() => setPaginationModel({
-                      ...paginationModel,
-                      page: Math.max(0, paginationModel.page - 1)
-                    })}
-                  >
-                    Previous
-                  </Button>
-                  <Typography variant="body2" color="text.secondary">
-                    Page {paginationModel.page + 1} of {Math.ceil(filteredItems.length / paginationModel.pageSize)}
-                  </Typography>
-                </Box>
-                <Button 
-                  variant="outlined" 
-                  size="small" 
-                  sx={{ borderRadius: 1 }}
-                  disabled={paginationModel.page >= Math.ceil(filteredItems.length / paginationModel.pageSize) - 1}
-                  onClick={() => setPaginationModel({
-                    ...paginationModel,
-                    page: Math.min(
-                      Math.ceil(filteredItems.length / paginationModel.pageSize) - 1,
-                      paginationModel.page + 1
-                    )
-                  })}
-                >
-                  Next
-                </Button>
-              </Box>
-            )
           }}
           sx={{
             '& .MuiDataGrid-cell:focus': {
@@ -850,6 +787,9 @@ export default function InventoryPage() {
             '& .MuiDataGrid-footerContainer': {
               borderTop: '1px solid',
               borderColor: 'divider',
+            },
+            '& .MuiDataGrid-columnHeaderCheckbox .MuiDataGrid-columnHeaderTitleContainer': {
+              display: 'block'
             }
           }}
         />
